@@ -6,8 +6,6 @@ import { z } from "zod";
 
 const router = Router();
 
-const GATEWAY = "https://ai.gateway.lovable.dev/v1";
-
 const SYSTEM = `You are Aura, a premium autonomous AI agent for designers, founders and engineers.
 
 You have real tools. Use them proactively instead of guessing:
@@ -133,10 +131,11 @@ router.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  // ── API key check ──────────────────────────────────────────────────────────
-  const apiKey = process.env["LOVABLE_API_KEY"];
-  if (!apiKey) {
-    res.status(500).json({ error: "Missing LOVABLE_API_KEY" });
+  // ── AI credentials ────────────────────────────────────────────────────────
+  const openaiBaseUrl = process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"];
+  const openaiApiKey = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
+  if (!openaiBaseUrl || !openaiApiKey) {
+    res.status(500).json({ error: "Missing AI integration configuration" });
     return;
   }
 
@@ -179,9 +178,9 @@ router.post("/", async (req: Request, res: Response) => {
 
   // ── AI gateway ────────────────────────────────────────────────────────────
   const gateway = createOpenAICompatible({
-    name: "lovable",
-    baseURL: GATEWAY,
-    headers: { Authorization: `Bearer ${apiKey}` },
+    name: "replit-openai",
+    baseURL: openaiBaseUrl,
+    headers: { Authorization: `Bearer ${openaiApiKey}` },
   });
 
   // ── Agent tools ───────────────────────────────────────────────────────────
@@ -270,31 +269,28 @@ router.post("/", async (req: Request, res: Response) => {
       }),
       execute: async ({ prompt }) => {
         try {
-          const imgRes = await fetch(`${GATEWAY}/chat/completions`, {
+          const imgRes = await fetch(`${openaiBaseUrl}/images/generations`, {
             method: "POST",
             headers: {
               "content-type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
+              Authorization: `Bearer ${openaiApiKey}`,
             },
             body: JSON.stringify({
-              model: "google/gemini-2.5-flash-image",
-              modalities: ["image", "text"],
-              messages: [{ role: "user", content: prompt }],
+              model: "gpt-image-1",
+              prompt,
+              size: "1024x1024",
             }),
           });
           if (!imgRes.ok) {
             const detail = await imgRes.text();
-            if (imgRes.status === 402) return { error: "Out of AI credits — top up to generate images." };
             if (imgRes.status === 429) return { error: "Rate limited. Try again shortly." };
             return { error: `Image generation failed (${imgRes.status}): ${detail.slice(0, 200)}` };
           }
           const json = (await imgRes.json()) as {
-            choices?: { message?: { images?: { image_url?: { url?: string } }[] } }[];
+            data?: { b64_json?: string }[];
           };
-          const dataUrl = json.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-          if (!dataUrl) return { error: "The model returned no image." };
-
-          const base64 = dataUrl.split(",")[1] ?? "";
+          const base64 = json.data?.[0]?.b64_json;
+          if (!base64) return { error: "The model returned no image." };
           const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
           const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
           const { error: uploadError } = await supabase.storage
@@ -345,12 +341,11 @@ router.post("/", async (req: Request, res: Response) => {
 
   // ── Stream ─────────────────────────────────────────────────────────────────
   const result = streamText({
-    model: gateway("openai/gpt-5.6-sol"),
+    model: gateway("gpt-5.6-terra"),
     system: SYSTEM + memoryPreamble,
     messages: await convertToModelMessages(uiMessages),
     tools,
     stopWhen: stepCountIs(50),
-    providerOptions: { lovable: { reasoningEffort: "none" } },
   });
 
   const aiResponse = result.toUIMessageStreamResponse({
@@ -373,9 +368,6 @@ router.post("/", async (req: Request, res: Response) => {
       console.error("chat stream error", err);
       const detail = err as { message?: string; responseBody?: string; statusCode?: number };
       const text = `${detail?.statusCode ?? ""} ${detail?.message ?? ""} ${detail?.responseBody ?? ""}`;
-      if (text.includes("402") || text.toLowerCase().includes("credit")) {
-        return "You're out of AI credits. Top up your Lovable AI credits to keep generating.";
-      }
       if (text.includes("429")) return "Rate limit reached. Try again in a moment.";
       return "Generation failed. Please try again.";
     },
