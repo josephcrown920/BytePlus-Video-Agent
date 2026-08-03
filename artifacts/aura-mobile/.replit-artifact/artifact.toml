@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/aura-mobile/"
+title = "Aura Mobile"
+description = "Aura AI mobile companion app built with Expo. Lets users sign in with Supabase auth, browse past AI conversation threads, start new chats with streaming AI responses, and view generated images — all in a dark purple/black premium design that mirrors the Aura web app."
+version = "1.0.0"
+id = "artifacts/aura-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/aura-mobile/" ]
+localPort = 18809
+
+[services.development]
+run = "pnpm --filter @workspace/aura-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/aura-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/aura-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "18809"
+BASE_PATH = "/aura-mobile/"

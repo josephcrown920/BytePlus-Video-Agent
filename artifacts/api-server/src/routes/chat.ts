@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createClient } from "@supabase/supabase-js";
-import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from "ai";
+import { convertToModelMessages, stepCountIs, streamText, tool, type LanguageModel, type UIMessage } from "ai";
 import { z } from "zod";
 
 const router = Router();
@@ -31,7 +31,7 @@ function makeSupabaseFetch(supabaseKey: string, userToken?: string): typeof fetc
       typeof Request !== "undefined" && input instanceof Request ? input.headers : undefined,
     );
     if (init?.headers) {
-      new Headers(init.headers as HeadersInit).forEach((value, key) =>
+      new Headers(init.headers as ConstructorParameters<typeof Headers>[0]).forEach((value, key) =>
         headers.set(key, value),
       );
     }
@@ -45,7 +45,7 @@ function makeSupabaseFetch(supabaseKey: string, userToken?: string): typeof fetc
     if (userToken) {
       headers.set("Authorization", `Bearer ${userToken}`);
     }
-    return fetch(input as RequestInfo, { ...init, headers });
+    return fetch(input as Parameters<typeof fetch>[0], { ...init, headers });
   };
 }
 
@@ -777,7 +777,7 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
 
   // ── Stream ─────────────────────────────────────────────────────────────────
   const result = streamText({
-    model: gateway("gpt-5.6-terra"),
+    model: gateway("gpt-5.6-terra") as unknown as LanguageModel,
     system: SYSTEM + memoryPreamble,
     messages: await convertToModelMessages(uiMessages),
     tools,

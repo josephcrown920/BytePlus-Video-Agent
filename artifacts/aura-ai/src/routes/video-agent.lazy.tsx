@@ -61,8 +61,8 @@ function VideoAgentHome() {
 
   async function handleCreate() {
     const trimmed = prompt.trim();
-    if (!trimmed) return toast.error("Describe your video first");
-    if (trimmed.length < 10) return toast.error("Add a bit more detail");
+    if (!trimmed) { toast.error("Describe your video first"); return; }
+    if (trimmed.length < 10) { toast.error("Add a bit more detail"); return; }
 
     setLoading(true);
     try {

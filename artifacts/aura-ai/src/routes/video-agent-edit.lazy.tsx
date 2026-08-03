@@ -68,7 +68,7 @@ function VideoEditor() {
   function removeScene(sceneId: string) {
     const p = videoAgentStore.get(id);
     if (!p) return;
-    if (p.scenes.length <= 1) return toast.error("A video needs at least one scene");
+    if (p.scenes.length <= 1) { toast.error("A video needs at least one scene"); return; }
     const updated = videoAgentStore.update(id, {
       scenes: p.scenes.filter((s) => s.id !== sceneId),
     });
@@ -79,7 +79,7 @@ function VideoEditor() {
   }
 
   async function regenFrame(scene: VideoScene) {
-    if (!scene.description.trim()) return toast.error("Add a visual description first");
+    if (!scene.description.trim()) { toast.error("Add a visual description first"); return; }
     setRegenId(scene.id);
     abortRef.current = new AbortController();
     updateScene(scene.id, { frameStatus: "loading" });

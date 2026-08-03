@@ -76,5 +76,8 @@
     "vaul": "^1.1.2",
     "vite": "catalog:",
     "zod": "catalog:"
+  },
+  "dependencies": {
+    "wouter": "catalog:"
   }
 }

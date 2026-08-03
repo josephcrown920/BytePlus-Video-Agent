@@ -1,0 +1,1 @@
+- [Aura Mobile architecture](aura-mobile-arch.md) — Expo app with Supabase auth + direct DB queries + Vercel AI SDK stream parsing for /api/chat
