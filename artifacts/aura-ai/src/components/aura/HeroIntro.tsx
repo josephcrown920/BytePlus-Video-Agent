@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, Zap } from "lucide-react";
 
-import heroCity from "@/assets/hero-city.jpg";
+import heroCar from "@/assets/hero-car.jpg";
 
 const WORDS = ["visuals", "interfaces", "systems", "stories", "worlds"];
 
@@ -16,8 +16,8 @@ export function HeroIntro({ onEnter }: { onEnter: () => void }) {
   return (
     <section className="relative flex min-h-[100svh] w-full items-center justify-center overflow-hidden">
       <img
-        src={heroCity}
-        alt="Cinematic neon cityscape generated with Aura AI"
+        src={heroCar}
+        alt="Cinematic car explosion — generated with Aura AI"
         className="animate-hero-zoom absolute inset-0 h-full w-full object-cover opacity-40"
       />
       <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/70 to-background" />
