@@ -11,7 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AgentRouteImport } from './routes/agent'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as VideoAgentRouteImport } from './routes/video-agent'
+import { Route as VideoAgentEditRouteImport } from './routes/video-agent-edit'
+import { Route as VideoAgentProcessRouteImport } from './routes/video-agent-process'
 import { Route as AuthenticatedChatIndexRouteImport } from './routes/_authenticated/chat/index'
 import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat/$threadId'
 
@@ -24,11 +28,35 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgentRoute = AgentRouteImport.update({
+  id: '/agent',
+  path: '/agent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VideoAgentRoute = VideoAgentRouteImport.update({
+  id: '/video-agent',
+  path: '/video-agent',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/video-agent.lazy').then((d) => d.Route))
+const VideoAgentEditRoute = VideoAgentEditRouteImport.update({
+  id: '/video-agent-edit',
+  path: '/video-agent-edit',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/video-agent-edit.lazy').then((d) => d.Route),
+)
+const VideoAgentProcessRoute = VideoAgentProcessRouteImport.update({
+  id: '/video-agent-process',
+  path: '/video-agent-process',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/video-agent-process.lazy').then((d) => d.Route),
+)
 const AuthenticatedChatIndexRoute = AuthenticatedChatIndexRouteImport.update({
   id: '/chat/',
   path: '/chat/',
@@ -43,13 +71,21 @@ const AuthenticatedChatThreadIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/agent': typeof AgentRoute
   '/auth': typeof AuthRoute
+  '/video-agent': typeof VideoAgentRoute
+  '/video-agent-edit': typeof VideoAgentEditRoute
+  '/video-agent-process': typeof VideoAgentProcessRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat/': typeof AuthenticatedChatIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agent': typeof AgentRoute
   '/auth': typeof AuthRoute
+  '/video-agent': typeof VideoAgentRoute
+  '/video-agent-edit': typeof VideoAgentEditRoute
+  '/video-agent-process': typeof VideoAgentProcessRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat': typeof AuthenticatedChatIndexRoute
 }
@@ -57,20 +93,44 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/agent': typeof AgentRoute
   '/auth': typeof AuthRoute
+  '/video-agent': typeof VideoAgentRoute
+  '/video-agent-edit': typeof VideoAgentEditRoute
+  '/video-agent-process': typeof VideoAgentProcessRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/chat/': typeof AuthenticatedChatIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/chat/$threadId' | '/chat/'
+  fullPaths:
+    | '/'
+    | '/agent'
+    | '/auth'
+    | '/video-agent'
+    | '/video-agent-edit'
+    | '/video-agent-process'
+    | '/chat/$threadId'
+    | '/chat/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/chat/$threadId' | '/chat'
+  to:
+    | '/'
+    | '/agent'
+    | '/auth'
+    | '/video-agent'
+    | '/video-agent-edit'
+    | '/video-agent-process'
+    | '/chat/$threadId'
+    | '/chat'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/agent'
     | '/auth'
+    | '/video-agent'
+    | '/video-agent-edit'
+    | '/video-agent-process'
     | '/_authenticated/chat/$threadId'
     | '/_authenticated/chat/'
   fileRoutesById: FileRoutesById
@@ -78,7 +138,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AgentRoute: typeof AgentRoute
   AuthRoute: typeof AuthRoute
+  VideoAgentRoute: typeof VideoAgentRoute
+  VideoAgentEditRoute: typeof VideoAgentEditRoute
+  VideoAgentProcessRoute: typeof VideoAgentProcessRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -97,11 +161,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agent': {
+      id: '/agent'
+      path: '/agent'
+      fullPath: '/agent'
+      preLoaderRoute: typeof AgentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/video-agent': {
+      id: '/video-agent'
+      path: '/video-agent'
+      fullPath: '/video-agent'
+      preLoaderRoute: typeof VideoAgentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/video-agent-edit': {
+      id: '/video-agent-edit'
+      path: '/video-agent-edit'
+      fullPath: '/video-agent-edit'
+      preLoaderRoute: typeof VideoAgentEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/video-agent-process': {
+      id: '/video-agent-process'
+      path: '/video-agent-process'
+      fullPath: '/video-agent-process'
+      preLoaderRoute: typeof VideoAgentProcessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/chat/': {
@@ -137,7 +229,11 @@ const AuthenticatedRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AgentRoute: AgentRoute,
   AuthRoute: AuthRoute,
+  VideoAgentRoute: VideoAgentRoute,
+  VideoAgentEditRoute: VideoAgentEditRoute,
+  VideoAgentProcessRoute: VideoAgentProcessRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
