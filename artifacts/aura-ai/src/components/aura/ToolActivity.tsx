@@ -10,6 +10,7 @@ import {
   Loader2,
   MessageSquare,
   Search,
+  Video,
   Wrench,
 } from "lucide-react";
 
@@ -19,6 +20,7 @@ const LABELS: Record<string, { label: string; icon: typeof Search }> = {
   calculate: { label: "Calculating", icon: Calculator },
   current_time: { label: "Checking the time", icon: Clock },
   generate_image: { label: "Generating image", icon: ImageIcon },
+  generate_video: { label: "Generating video", icon: Video },
   remember: { label: "Saving to memory", icon: Brain },
   recall_memories: { label: "Recalling memory", icon: Brain },
   generate_script: { label: "Writing script", icon: Clapperboard },
@@ -36,7 +38,8 @@ type Props = {
 function summarize(input: unknown) {
   if (!input || typeof input !== "object") return "";
   const record = input as Record<string, unknown>;
-  const value = record.query ?? record.url ?? record.expression ?? record.prompt ?? record.fact;
+  const value =
+    record.query ?? record.url ?? record.expression ?? record.prompt ?? record.fact ?? record.concept ?? record.topic;
   return typeof value === "string" ? value : "";
 }
 
@@ -45,14 +48,10 @@ export function ToolActivity({ name, state, input, output }: Props) {
   const Icon = meta.icon;
   const running = state !== "output-available" && state !== "output-error";
   const detail = summarize(input);
-  const image =
-    output && typeof output === "object" && "imageUrl" in (output as Record<string, unknown>)
-      ? String((output as Record<string, unknown>).imageUrl)
-      : null;
-  const failure =
-    output && typeof output === "object" && "error" in (output as Record<string, unknown>)
-      ? String((output as Record<string, unknown>).error)
-      : null;
+  const rec = output && typeof output === "object" ? (output as Record<string, unknown>) : null;
+  const image = rec && "imageUrl" in rec ? String(rec.imageUrl) : null;
+  const videoUrl = rec && "videoUrl" in rec ? String(rec.videoUrl) : null;
+  const failure = rec && "error" in rec ? String(rec.error) : null;
 
   return (
     <div className="space-y-2">
@@ -76,6 +75,17 @@ export function ToolActivity({ name, state, input, output }: Props) {
           src={image}
           alt={detail || "Generated image"}
           loading="lazy"
+          className="max-w-sm rounded-2xl border border-white/10 shadow-2xl"
+        />
+      )}
+      {videoUrl && (
+        <video
+          src={videoUrl}
+          controls
+          autoPlay
+          loop
+          muted
+          playsInline
           className="max-w-sm rounded-2xl border border-white/10 shadow-2xl"
         />
       )}

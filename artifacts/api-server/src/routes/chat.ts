@@ -11,6 +11,7 @@ const SYSTEM = `You are Aura, a premium autonomous AI agent for designers, found
 You have real tools. Use them proactively instead of guessing:
 - web_search + fetch_url for anything current, factual, or link-based. Always cite sources as markdown links.
 - generate_image whenever a visual is requested. After it returns, embed the image with markdown: ![alt](imageUrl).
+- generate_video whenever someone asks for a video clip, reel, animation or moving visual. After it returns, embed with HTML: <video src="videoUrl" controls autoplay loop muted style="max-width:100%;border-radius:12px"></video>.
 - generate_script to produce a structured video/ad/reel script with scenes and dialogue.
 - generate_captions to craft platform-optimised social captions for TikTok, Instagram and LinkedIn.
 - storyboard to break a concept into numbered visual scenes, each with a reference image.
@@ -570,6 +571,205 @@ Return ONLY valid JSON (no markdown fences):
           return { ...board, scenes: scenesWithImages };
         } catch (err) {
           return { error: `Storyboard generation failed: ${(err as Error).message}` };
+        }
+      },
+    }),
+
+    generate_video: tool({
+      description:
+        "Generate a short AI video clip from a text prompt. Creates a real MP4 video by generating cinematic key-frame images and blending them together with smooth crossfade transitions. Use whenever someone asks for a video, reel, clip, short film, or animated visual. Returns a URL to the MP4 file.",
+      inputSchema: z.object({
+        prompt: z.string().describe("Describe the video scene or concept to generate"),
+        style: z
+          .string()
+          .optional()
+          .describe(
+            "Visual style, e.g. 'cinematic 4K', 'anime', 'photorealistic', 'neon noir', 'golden hour'",
+          ),
+      }),
+      execute: async ({ prompt, style }) => {
+        try {
+          const styleHint = style ? ` Visual style: ${style}.` : "";
+          const frameCount = 3;
+
+          // Step 1: Generate distinct cinematic scene prompts with GPT
+          const planRes = await fetch(`${openaiBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              Authorization: `Bearer ${openaiApiKey}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [
+                {
+                  role: "user",
+                  content: `Create ${frameCount} cinematic image prompts for a short video about: "${prompt}".${styleHint}
+Each frame should flow naturally into the next — showing progression, movement or different angles of the same scene.
+Return ONLY valid JSON (no markdown fences):
+{ "scenes": [{ "image_prompt": "highly detailed cinematic image generation prompt" }] }
+Make each prompt vivid, specific, and optimised for AI image generation. Include lighting, mood, composition details.`,
+                },
+              ],
+              response_format: { type: "json_object" },
+              temperature: 0.8,
+            }),
+          });
+
+          if (!planRes.ok) return { error: "Failed to plan video scenes" };
+          const planJson = (await planRes.json()) as {
+            choices?: { message?: { content?: string } }[];
+          };
+          const planContent = planJson.choices?.[0]?.message?.content;
+          if (!planContent) return { error: "No scene plan returned from model." };
+
+          const { scenes } = JSON.parse(planContent) as {
+            scenes: { image_prompt: string }[];
+          };
+          const validScenes = (scenes ?? []).slice(0, frameCount);
+          if (validScenes.length === 0) return { error: "No scenes generated." };
+
+          // Step 2: Generate an image for each scene in parallel
+          const imageBuffers = await Promise.all(
+            validScenes.map(async (scene) => {
+              try {
+                const imgRes = await fetch(`${openaiBaseUrl}/images/generations`, {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    Authorization: `Bearer ${openaiApiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: "gpt-image-1",
+                    prompt: scene.image_prompt,
+                    size: "1536x1024",
+                  }),
+                });
+                if (!imgRes.ok) return null;
+                const json = (await imgRes.json()) as {
+                  data?: { b64_json?: string }[];
+                };
+                const base64 = json.data?.[0]?.b64_json;
+                if (!base64) return null;
+                return Buffer.from(base64, "base64");
+              } catch {
+                return null;
+              }
+            }),
+          );
+
+          const validBuffers = imageBuffers.filter((b) => b !== null) as Buffer[];
+          if (validBuffers.length === 0) return { error: "Failed to generate any video frames." };
+
+          // Step 3: Write frames to temp dir and render MP4 with FFmpeg
+          const fsp = await import("fs/promises");
+          const { execFile } = await import("child_process");
+          const { promisify } = await import("util");
+          const { tmpdir } = await import("os");
+          const path = await import("path");
+          const execFileAsync = promisify(execFile);
+
+          const tmpDir = await fsp.mkdtemp(path.join(tmpdir(), "aura-video-"));
+          const framePaths: string[] = [];
+          const outputPath = path.join(tmpDir, "video.mp4");
+
+          try {
+            for (let i = 0; i < validBuffers.length; i++) {
+              const p = path.join(tmpDir, `frame${i}.png`);
+              await fsp.writeFile(p, validBuffers[i]);
+              framePaths.push(p);
+            }
+
+            const frameDuration = 4; // seconds per frame
+            const fadeDuration = 0.5;
+
+            // Each input loops for frameDuration + fadeDuration so xfade has material to work with
+            const inputs = framePaths.flatMap((p) => [
+              "-loop",
+              "1",
+              "-t",
+              String(frameDuration + fadeDuration),
+              "-i",
+              p,
+            ]);
+
+            // Scale every frame to 1280×720 with letterboxing
+            const scaleFilters = framePaths.map(
+              (_, i) =>
+                `[${i}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}]`,
+            );
+
+            let filterComplex: string;
+            let mapArg: string;
+
+            if (framePaths.length === 1) {
+              filterComplex = scaleFilters[0];
+              mapArg = "[v0]";
+            } else {
+              const xfadeFilters: string[] = [];
+              let prev = "v0";
+              for (let i = 1; i < framePaths.length; i++) {
+                const offset = i * frameDuration - fadeDuration;
+                const out = i === framePaths.length - 1 ? "out" : `xf${i}`;
+                xfadeFilters.push(
+                  `[${prev}][v${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${offset}[${out}]`,
+                );
+                prev = out;
+              }
+              filterComplex = [...scaleFilters, ...xfadeFilters].join(";");
+              mapArg = "[out]";
+            }
+
+            const totalDuration = framePaths.length * frameDuration - fadeDuration;
+
+            await execFileAsync(
+              "ffmpeg",
+              [
+                ...inputs,
+                "-filter_complex",
+                filterComplex,
+                "-map",
+                mapArg,
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-t",
+                String(totalDuration),
+                "-y",
+                outputPath,
+              ],
+              { timeout: 120_000 },
+            );
+
+            // Step 4: Upload MP4 to Supabase Storage
+            const videoBuffer = await fsp.readFile(outputPath);
+            const storagePath = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
+
+            const { error: uploadError } = await supabase.storage
+              .from("artifacts")
+              .upload(storagePath, videoBuffer, { contentType: "video/mp4" });
+
+            if (uploadError) return { error: `Failed to store video: ${uploadError.message}` };
+
+            const { data: signed, error: signError } = await supabase.storage
+              .from("artifacts")
+              .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+
+            if (signError || !signed?.signedUrl) {
+              return { error: `Failed to create video URL: ${signError?.message ?? "unknown"}` };
+            }
+
+            return { prompt, videoUrl: signed.signedUrl };
+          } finally {
+            await Promise.allSettled([
+              ...framePaths.map((p) => fsp.unlink(p)),
+              fsp.unlink(outputPath).catch(() => {}),
+            ]);
+            await fsp.rmdir(tmpDir).catch(() => {});
+          }
+        } catch (err) {
+          return { error: `Video generation failed: ${(err as Error).message}` };
         }
       },
     }),
