@@ -4,9 +4,12 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import {
   ArrowUp,
   Brain,
+  Clapperboard,
   Code2,
+  Film,
   ImageIcon,
   Menu,
+  MessageSquare,
   Paperclip,
   Search,
   Sparkles,
@@ -31,6 +34,9 @@ import {
 } from "@/lib/threads";
 import { ThreadSidebar } from "./ThreadSidebar";
 import { ToolActivity } from "./ToolActivity";
+import { ScriptCard } from "./ScriptCard";
+import { CaptionsCard } from "./CaptionsCard";
+import { StoryboardCard } from "./StoryboardCard";
 import { useTypewriter } from "./useTypewriter";
 
 const DEMO_PHRASES = [
@@ -56,10 +62,25 @@ const QUICK_ACTIONS = [
       "Generate a hyper-real cinematic image of a neon-soaked city street at dusk, shot on 35mm film.",
   },
   {
-    icon: Code2,
-    label: "Architect",
-    description: "Design and review complex logic",
-    prompt: "Design a resilient streaming architecture for a realtime AI chat product.",
+    icon: Clapperboard,
+    label: "Script",
+    description: "Write a video or ad script",
+    prompt:
+      "Write a 30-second ad script for a premium AI productivity app targeting founders and designers.",
+  },
+  {
+    icon: MessageSquare,
+    label: "Captions",
+    description: "Platform-optimised social copy",
+    prompt:
+      "Generate TikTok, Instagram and LinkedIn captions for launching a new AI design tool.",
+  },
+  {
+    icon: Film,
+    label: "Storyboard",
+    description: "Visual breakdown with reference frames",
+    prompt:
+      "Create a 3-scene storyboard for a product launch video: a minimalist AI SaaS tool that helps designers ship faster.",
   },
   {
     icon: Brain,
@@ -304,13 +325,59 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                           const toolPart = part as unknown as {
                             type: string;
                             state: string;
+                            toolName?: string;
                             input?: unknown;
                             output?: unknown;
                           };
+                          const rawName = toolPart.type.replace(/^tool-/, "");
+                          const toolName = toolPart.toolName ?? rawName;
+                          const hasOutput = toolPart.state === "output-available";
+
+                          // Structured cards for content creation tools
+                          if (hasOutput && toolName === "generate_script") {
+                            return (
+                              <div key={index} className="space-y-2">
+                                <ToolActivity
+                                  name={toolName}
+                                  state={toolPart.state}
+                                  input={toolPart.input}
+                                  output={toolPart.output}
+                                />
+                                <ScriptCard output={toolPart.output} />
+                              </div>
+                            );
+                          }
+                          if (hasOutput && toolName === "generate_captions") {
+                            return (
+                              <div key={index} className="space-y-2">
+                                <ToolActivity
+                                  name={toolName}
+                                  state={toolPart.state}
+                                  input={toolPart.input}
+                                  output={toolPart.output}
+                                />
+                                <CaptionsCard output={toolPart.output} />
+                              </div>
+                            );
+                          }
+                          if (hasOutput && toolName === "storyboard") {
+                            return (
+                              <div key={index} className="space-y-2">
+                                <ToolActivity
+                                  name={toolName}
+                                  state={toolPart.state}
+                                  input={toolPart.input}
+                                  output={toolPart.output}
+                                />
+                                <StoryboardCard output={toolPart.output} />
+                              </div>
+                            );
+                          }
+
                           return (
                             <ToolActivity
                               key={index}
-                              name={toolPart.type.replace("tool-", "")}
+                              name={toolName}
                               state={toolPart.state}
                               input={toolPart.input}
                               output={toolPart.output}

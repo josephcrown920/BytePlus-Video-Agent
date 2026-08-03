@@ -2,10 +2,13 @@ import {
   Brain,
   Calculator,
   Check,
+  Clapperboard,
   Clock,
+  Film,
   Globe,
   ImageIcon,
   Loader2,
+  MessageSquare,
   Search,
   Wrench,
 } from "lucide-react";
@@ -18,6 +21,9 @@ const LABELS: Record<string, { label: string; icon: typeof Search }> = {
   generate_image: { label: "Generating image", icon: ImageIcon },
   remember: { label: "Saving to memory", icon: Brain },
   recall_memories: { label: "Recalling memory", icon: Brain },
+  generate_script: { label: "Writing script", icon: Clapperboard },
+  generate_captions: { label: "Crafting captions", icon: MessageSquare },
+  storyboard: { label: "Building storyboard", icon: Film },
 };
 
 type Props = {

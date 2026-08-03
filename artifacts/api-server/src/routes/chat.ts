@@ -11,6 +11,9 @@ const SYSTEM = `You are Aura, a premium autonomous AI agent for designers, found
 You have real tools. Use them proactively instead of guessing:
 - web_search + fetch_url for anything current, factual, or link-based. Always cite sources as markdown links.
 - generate_image whenever a visual is requested. After it returns, embed the image with markdown: ![alt](imageUrl).
+- generate_script to produce a structured video/ad/reel script with scenes and dialogue.
+- generate_captions to craft platform-optimised social captions for TikTok, Instagram and LinkedIn.
+- storyboard to break a concept into numbered visual scenes, each with a reference image.
 - calculate for any arithmetic.
 - current_time for anything date or time sensitive.
 - remember to store durable user preferences and facts; recall_memories to look them up.
@@ -335,6 +338,239 @@ router.post("/", async (req: Request, res: Response) => {
           .limit(50);
         if (recallError) return { error: recallError.message };
         return { memories: mems ?? [] };
+      },
+    }),
+
+    generate_script: tool({
+      description:
+        "Generate a structured video/ad/reel script with numbered scenes, visual descriptions and dialogue. Use whenever the user asks for a script, screenplay, or shot list.",
+      inputSchema: z.object({
+        topic: z.string().describe("Topic, brief, or concept for the script"),
+        format: z
+          .enum(["video", "ad", "reel"])
+          .describe("Script format: video (long-form), ad (30-60s), or reel (15-30s short-form)"),
+        duration_seconds: z.number().optional().describe("Target total duration in seconds"),
+      }),
+      execute: async ({ topic, format, duration_seconds }) => {
+        try {
+          const userPrompt = `Write a ${format} script about: "${topic}".${duration_seconds ? ` Target duration: ${duration_seconds} seconds.` : ""}
+Return ONLY valid JSON (no markdown fences) in this exact shape:
+{
+  "title": "string",
+  "format": "${format}",
+  "total_duration_seconds": number,
+  "scenes": [
+    { "scene": 1, "description": "what the viewer sees on screen", "dialogue": "voiceover or spoken words (empty string if none)", "duration_seconds": number }
+  ]
+}
+Use 3-6 scenes. Be vivid, cinematic, and specific.`;
+
+          const res = await fetch(`${openaiBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              Authorization: `Bearer ${openaiApiKey}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: userPrompt }],
+              response_format: { type: "json_object" },
+              temperature: 0.8,
+            }),
+          });
+          if (!res.ok) {
+            const detail = await res.text();
+            return { error: `Script generation failed (${res.status}): ${detail.slice(0, 200)}` };
+          }
+          const json = (await res.json()) as {
+            choices?: { message?: { content?: string } }[];
+          };
+          const content = json.choices?.[0]?.message?.content;
+          if (!content) return { error: "No script returned from model." };
+          return JSON.parse(content) as {
+            title: string;
+            format: string;
+            total_duration_seconds: number;
+            scenes: {
+              scene: number;
+              description: string;
+              dialogue: string;
+              duration_seconds: number;
+            }[];
+          };
+        } catch (err) {
+          return { error: `Script generation failed: ${(err as Error).message}` };
+        }
+      },
+    }),
+
+    generate_captions: tool({
+      description:
+        "Produce platform-optimised social media captions (TikTok, Instagram, LinkedIn) with hashtags for a topic or content piece.",
+      inputSchema: z.object({
+        topic: z.string().describe("Topic, content piece, or brief to write captions for"),
+        platforms: z
+          .array(z.enum(["tiktok", "instagram", "linkedin"]))
+          .optional()
+          .describe("Platforms to generate captions for (defaults to all three)"),
+      }),
+      execute: async ({ topic, platforms }) => {
+        const targetPlatforms = platforms ?? ["tiktok", "instagram", "linkedin"];
+        try {
+          const userPrompt = `Write social media captions for: "${topic}".
+Generate one caption for each of these platforms: ${targetPlatforms.join(", ")}.
+Return ONLY valid JSON (no markdown fences) in this exact shape:
+{
+  "topic": "string",
+  "captions": [
+    { "platform": "tiktok", "caption": "string", "hashtags": ["string"] }
+  ]
+}
+Platform guidelines:
+- TikTok: punchy, energetic, 1-3 sentences, 5-8 trending hashtags
+- Instagram: visual storytelling, 2-4 sentences, 8-12 niche hashtags
+- LinkedIn: professional narrative, 3-5 sentences, 3-5 industry hashtags
+Only include the requested platforms.`;
+
+          const res = await fetch(`${openaiBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              Authorization: `Bearer ${openaiApiKey}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: userPrompt }],
+              response_format: { type: "json_object" },
+              temperature: 0.9,
+            }),
+          });
+          if (!res.ok) {
+            const detail = await res.text();
+            return { error: `Caption generation failed (${res.status}): ${detail.slice(0, 200)}` };
+          }
+          const json = (await res.json()) as {
+            choices?: { message?: { content?: string } }[];
+          };
+          const content = json.choices?.[0]?.message?.content;
+          if (!content) return { error: "No captions returned from model." };
+          return JSON.parse(content) as {
+            topic: string;
+            captions: { platform: string; caption: string; hashtags: string[] }[];
+          };
+        } catch (err) {
+          return { error: `Caption generation failed: ${(err as Error).message}` };
+        }
+      },
+    }),
+
+    storyboard: tool({
+      description:
+        "Break a concept into a numbered visual storyboard with scene descriptions and AI-generated reference images. Use when someone asks for a storyboard, shot breakdown, or visual treatment.",
+      inputSchema: z.object({
+        concept: z.string().describe("The concept, story, or campaign to storyboard"),
+        scene_count: z
+          .number()
+          .min(2)
+          .max(4)
+          .optional()
+          .describe("Number of scenes to generate (2–4, defaults to 3)"),
+      }),
+      execute: async ({ concept, scene_count }) => {
+        const count = Math.min(4, Math.max(2, scene_count ?? 3));
+        try {
+          // Step 1: generate scene breakdown
+          const userPrompt = `Create a ${count}-scene storyboard for: "${concept}".
+Return ONLY valid JSON (no markdown fences):
+{
+  "title": "string",
+  "concept": "string",
+  "scenes": [
+    {
+      "scene": 1,
+      "title": "string",
+      "description": "what the viewer sees — composition, lighting, action, mood",
+      "image_prompt": "detailed cinematic image generation prompt for this exact scene"
+    }
+  ]
+}`;
+
+          const planRes = await fetch(`${openaiBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              Authorization: `Bearer ${openaiApiKey}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: userPrompt }],
+              response_format: { type: "json_object" },
+              temperature: 0.8,
+            }),
+          });
+          if (!planRes.ok) {
+            const detail = await planRes.text();
+            return { error: `Storyboard generation failed (${planRes.status}): ${detail.slice(0, 200)}` };
+          }
+          const planJson = (await planRes.json()) as {
+            choices?: { message?: { content?: string } }[];
+          };
+          const planContent = planJson.choices?.[0]?.message?.content;
+          if (!planContent) return { error: "No storyboard returned from model." };
+
+          const board = JSON.parse(planContent) as {
+            title: string;
+            concept: string;
+            scenes: {
+              scene: number;
+              title: string;
+              description: string;
+              image_prompt: string;
+            }[];
+          };
+
+          // Step 2: generate a reference image for each scene in parallel
+          const scenesWithImages = await Promise.all(
+            board.scenes.map(async (scene) => {
+              try {
+                const imgRes = await fetch(`${openaiBaseUrl}/images/generations`, {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    Authorization: `Bearer ${openaiApiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: "gpt-image-1",
+                    prompt: scene.image_prompt,
+                    size: "1024x1024",
+                  }),
+                });
+                if (!imgRes.ok) return { ...scene, imageUrl: null };
+                const imgJson = (await imgRes.json()) as {
+                  data?: { b64_json?: string }[];
+                };
+                const base64 = imgJson.data?.[0]?.b64_json;
+                if (!base64) return { ...scene, imageUrl: null };
+                const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+                const path = `${userId}/${Date.now()}-sb${scene.scene}-${Math.random().toString(36).slice(2, 6)}.png`;
+                const { error: uploadError } = await supabase.storage
+                  .from("artifacts")
+                  .upload(path, bytes, { contentType: "image/png" });
+                if (uploadError) return { ...scene, imageUrl: null };
+                const { data: signed } = await supabase.storage
+                  .from("artifacts")
+                  .createSignedUrl(path, 60 * 60 * 24 * 365);
+                return { ...scene, imageUrl: signed?.signedUrl ?? null };
+              } catch {
+                return { ...scene, imageUrl: null };
+              }
+            }),
+          );
+
+          return { ...board, scenes: scenesWithImages };
+        } catch (err) {
+          return { error: `Storyboard generation failed: ${(err as Error).message}` };
+        }
       },
     }),
   };
