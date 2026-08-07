@@ -333,6 +333,19 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                           const toolName = toolPart.toolName ?? rawName;
                           const hasOutput = toolPart.state === "output-available";
 
+                          // Resolve live progress label for video generation while it is running
+                          let videoProgress: string | undefined;
+                          if (toolName === "generate_video" && !hasOutput) {
+                            // Scan message parts (in reverse) for the latest transient progress annotation
+                            for (let j = message.parts.length - 1; j >= 0; j--) {
+                              const p = message.parts[j] as { type?: string; data?: { label?: string } };
+                              if (p.type === "data-video_progress" && p.data?.label) {
+                                videoProgress = p.data.label;
+                                break;
+                              }
+                            }
+                          }
+
                           // Structured cards for content creation tools
                           if (hasOutput && toolName === "generate_script") {
                             return (
@@ -381,6 +394,7 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                               state={toolPart.state}
                               input={toolPart.input}
                               output={toolPart.output}
+                              progress={videoProgress}
                             />
                           );
                         }

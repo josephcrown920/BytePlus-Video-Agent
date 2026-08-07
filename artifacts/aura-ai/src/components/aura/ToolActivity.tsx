@@ -33,6 +33,8 @@ type Props = {
   state: string;
   input?: unknown;
   output?: unknown;
+  /** Live progress label emitted by the tool during execution (e.g. "Generating frame 2/3…") */
+  progress?: string;
 };
 
 function summarize(input: unknown) {
@@ -43,7 +45,7 @@ function summarize(input: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-export function ToolActivity({ name, state, input, output }: Props) {
+export function ToolActivity({ name, state, input, output, progress }: Props) {
   const meta = LABELS[name] ?? { label: name, icon: Wrench };
   const Icon = meta.icon;
   const running = state !== "output-available" && state !== "output-error";
@@ -52,6 +54,9 @@ export function ToolActivity({ name, state, input, output }: Props) {
   const image = rec && "imageUrl" in rec ? String(rec.imageUrl) : null;
   const videoUrl = rec && "videoUrl" in rec ? String(rec.videoUrl) : null;
   const failure = rec && "error" in rec ? String(rec.error) : null;
+
+  // While running, show live progress label if available; fall back to default label
+  const displayLabel = running && progress ? progress : `${meta.label}${detail ? `: ${detail}` : ""}`;
 
   return (
     <div className="space-y-2">
@@ -65,8 +70,7 @@ export function ToolActivity({ name, state, input, output }: Props) {
         )}
         <Icon className="hidden size-3.5 shrink-0 sm:block" />
         <span className="truncate">
-          {meta.label}
-          {detail ? `: ${detail}` : ""}
+          {displayLabel}
         </span>
       </div>
       {failure && <p className="text-xs text-destructive">{failure}</p>}

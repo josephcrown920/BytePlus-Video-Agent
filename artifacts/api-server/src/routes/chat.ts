@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createClient } from "@supabase/supabase-js";
-import { convertToModelMessages, stepCountIs, streamText, tool, type LanguageModel, type UIMessage } from "ai";
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText, tool, type LanguageModel, type UIMessage } from "ai";
 import { z } from "zod";
 
 const router = Router();
@@ -188,6 +188,10 @@ router.post("/", async (req: Request, res: Response) => {
   });
 
   // ── Agent tools ───────────────────────────────────────────────────────────
+  // Shared writer — set synchronously inside createUIMessageStream.execute (before any tool runs)
+  // eslint-disable-next-line prefer-const
+  let videoProgressWriter: { write: (part: unknown) => void } | undefined;
+
   const tools = {
     web_search: tool({
       description:
@@ -592,7 +596,24 @@ Return ONLY valid JSON (no markdown fences):
           const styleHint = style ? ` Visual style: ${style}.` : "";
           const frameCount = 3;
 
+          // Helper to emit live progress into the stream badge
+          const writeProgress = (label: string) => {
+            try {
+              videoProgressWriter?.write({
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                type: "data-video_progress" as any,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                data: { label } as any,
+                transient: true,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              } as any);
+            } catch {
+              /* stream may already be closed */
+            }
+          };
+
           // Step 1: Generate distinct cinematic scene prompts with GPT
+          writeProgress("Planning video scenes…");
           const planRes = await fetch(`${openaiBaseUrl}/chat/completions`, {
             method: "POST",
             headers: {
@@ -629,37 +650,41 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
           const validScenes = (scenes ?? []).slice(0, frameCount);
           if (validScenes.length === 0) return { error: "No scenes generated." };
 
-          // Step 2: Generate an image for each scene in parallel
-          const imageBuffers = await Promise.all(
-            validScenes.map(async (scene) => {
-              try {
-                const imgRes = await fetch(`${openaiBaseUrl}/images/generations`, {
-                  method: "POST",
-                  headers: {
-                    "content-type": "application/json",
-                    Authorization: `Bearer ${openaiApiKey}`,
-                  },
-                  body: JSON.stringify({
-                    model: "gpt-image-1",
-                    prompt: scene.image_prompt,
-                    size: "1536x1024",
-                  }),
-                });
-                if (!imgRes.ok) return null;
-                const json = (await imgRes.json()) as {
-                  data?: { b64_json?: string }[];
-                };
-                const base64 = json.data?.[0]?.b64_json;
-                if (!base64) return null;
-                return Buffer.from(base64, "base64");
-              } catch {
-                return null;
+          // Step 2: Generate an image for each scene sequentially, reporting progress per frame
+          const imageBuffers: (Buffer | null)[] = [];
+          for (let i = 0; i < validScenes.length; i++) {
+            writeProgress(`Generating frame ${i + 1}/${validScenes.length}…`);
+            try {
+              const imgRes = await fetch(`${openaiBaseUrl}/images/generations`, {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  Authorization: `Bearer ${openaiApiKey}`,
+                },
+                body: JSON.stringify({
+                  model: "gpt-image-1",
+                  prompt: validScenes[i].image_prompt,
+                  size: "1536x1024",
+                }),
+              });
+              if (!imgRes.ok) {
+                imageBuffers.push(null);
+                continue;
               }
-            }),
-          );
+              const json = (await imgRes.json()) as {
+                data?: { b64_json?: string }[];
+              };
+              const base64 = json.data?.[0]?.b64_json;
+              imageBuffers.push(base64 ? Buffer.from(base64, "base64") : null);
+            } catch {
+              imageBuffers.push(null);
+            }
+          }
 
           const validBuffers = imageBuffers.filter((b) => b !== null) as Buffer[];
           if (validBuffers.length === 0) return { error: "Failed to generate any video frames." };
+
+          writeProgress("Encoding video…");
 
           // Step 3: Write frames to temp dir and render MP4 with FFmpeg
           const fsp = await import("fs/promises");
@@ -743,6 +768,7 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
             );
 
             // Step 4: Upload MP4 to Supabase Storage
+            writeProgress("Uploading video…");
             const videoBuffer = await fsp.readFile(outputPath);
             const storagePath = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
 
@@ -776,29 +802,41 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
   };
 
   // ── Stream ─────────────────────────────────────────────────────────────────
-  const result = streamText({
-    model: gateway("gpt-5.6-terra") as unknown as LanguageModel,
-    system: SYSTEM + memoryPreamble,
-    messages: await convertToModelMessages(uiMessages),
-    tools,
-    stopWhen: stepCountIs(50),
-  });
+  const modelMessages = await convertToModelMessages(uiMessages);
 
-  const aiResponse = result.toUIMessageStreamResponse({
-    originalMessages: uiMessages,
-    onFinish: async ({ responseMessage }) => {
-      const { error: saveErr } = await supabase.from("messages").insert({
-        thread_id: threadId,
-        user_id: userId,
-        role: "assistant",
-        client_message_id: responseMessage.id,
-        parts: responseMessage.parts as unknown as never,
+  // createUIMessageStream's execute runs synchronously, so videoProgressWriter is
+  // set before any tool execute() is called during streaming.
+  const uiStream = createUIMessageStream({
+    execute: ({ writer }) => {
+      videoProgressWriter = writer;
+
+      const result = streamText({
+        model: gateway("gpt-5.6-terra") as unknown as LanguageModel,
+        system: SYSTEM + memoryPreamble,
+        messages: modelMessages,
+        tools,
+        stopWhen: stepCountIs(50),
       });
-      if (saveErr) console.error("failed to save assistant message", saveErr);
-      await supabase
-        .from("threads")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", threadId);
+
+      writer.merge(
+        result.toUIMessageStream({
+          originalMessages: uiMessages,
+          onFinish: async ({ responseMessage }) => {
+            const { error: saveErr } = await supabase.from("messages").insert({
+              thread_id: threadId,
+              user_id: userId,
+              role: "assistant",
+              client_message_id: responseMessage.id,
+              parts: responseMessage.parts as unknown as never,
+            });
+            if (saveErr) console.error("failed to save assistant message", saveErr);
+            await supabase
+              .from("threads")
+              .update({ updated_at: new Date().toISOString() })
+              .eq("id", threadId);
+          },
+        }),
+      );
     },
     onError: (err) => {
       console.error("chat stream error", err);
@@ -810,6 +848,8 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
   });
 
   // ── Pipe web Response → Express response ───────────────────────────────────
+  const aiResponse = createUIMessageStreamResponse({ stream: uiStream });
+
   res.status(aiResponse.status);
   aiResponse.headers.forEach((value: string, key: string) => res.setHeader(key, value));
 
