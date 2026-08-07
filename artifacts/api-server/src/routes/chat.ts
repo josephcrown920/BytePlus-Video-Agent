@@ -460,7 +460,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     generate_script: tool({
       description:
-        "Generate a structured video/ad/reel script with numbered scenes, visual descriptions and dialogue. Use whenever the user asks for a script, screenplay, or shot list.",
+        "Generate a structured video/ad/reel script with numbered scenes, visual descriptions and dialogue. Enforces the Cinematic Viralist 3-step arc: Sensory Hook (0-3s) → Narrative Mid-Roll → Aesthetic Close. Use whenever the user asks for a script, screenplay, or shot list.",
       inputSchema: z.object({
         topic: z.string().describe("Topic, brief, or concept for the script"),
         format: z
@@ -471,16 +471,29 @@ router.post("/", async (req: Request, res: Response) => {
       execute: async ({ topic, format, duration_seconds }) => {
         try {
           const userPrompt = `Write a ${format} script about: "${topic}".${duration_seconds ? ` Target duration: ${duration_seconds} seconds.` : ""}
+
+## CINEMATIC VIRALIST BLUEPRINT (mandatory)
+Every script MUST follow this 3-step structure:
+
+STEP 1 — SENSORY HOOK (0-3 s): Scene 1 must be a sensory shock — a visual or auditory provocation that stops the scroll in under one second. Techniques: unexpected contrast, visceral close-up, fast cut on beat, a bold question, an unresolved action. Do NOT open with a logo, title card, wide establishing shot, or any introduction.
+
+STEP 2 — NARRATIVE MID-ROLL (3-15 s): Middle scenes build tension and meaning. Each scene must earn its place — advance the story, deepen emotion, or raise a question. No filler or recaps.
+
+STEP 3 — AESTHETIC CLOSE (final scene): End on an image or line that creates a desire to loop or share — a seamless loop, a callback to the hook, or a stinger.
+
 Return ONLY valid JSON (no markdown fences) in this exact shape:
 {
   "title": "string",
   "format": "${format}",
   "total_duration_seconds": number,
+  "hook": "one-sentence sensory shock — the exact opening image or sound that stops the scroll (0-3 s)",
   "scenes": [
     { "scene": 1, "description": "what the viewer sees on screen", "dialogue": "voiceover or spoken words (empty string if none)", "duration_seconds": number }
-  ]
+  ],
+  "close": "one-sentence description of the final loop-worthy image or stinger line",
+  "mood": "high-energy | calm | dramatic | inspirational"
 }
-Use 3-6 scenes. Be vivid, cinematic, and specific.`;
+Use 3-6 scenes. Scene 1 is the Hook (visceral, no title cards). The final scene is the Close (loop or stinger). Be vivid, cinematic, and specific. Detect mood: if the topic signals hype, launch, sport, or action, set mood to "high-energy".`;
 
           const res = await fetch(`${openaiBaseUrl}/chat/completions`, {
             method: "POST",
@@ -508,7 +521,10 @@ Use 3-6 scenes. Be vivid, cinematic, and specific.`;
             title: string;
             format: string;
             total_duration_seconds: number;
+            hook: string;
             scenes: { scene: number; description: string; dialogue: string; duration_seconds: number }[];
+            close: string;
+            mood?: string;
           };
           if (scriptResult.title) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any

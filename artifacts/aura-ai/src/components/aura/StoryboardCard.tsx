@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { Download, Film, ImageOff, Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadStoryboardPdf, type StoryboardData } from "@/lib/export";
+import { cinematicSceneRole, CINEMATIC_ROLE_STYLES } from "@/lib/video-agent-skills";
 
 type Scene = {
   scene: number;
@@ -123,6 +124,8 @@ export function StoryboardCard({ output }: { output: unknown }) {
 
   if (!board?.title || !Array.isArray(board.scenes)) return null;
 
+  const total = board.scenes.length;
+
   async function handleDownload() {
     setPdfLoading(true);
     try {
@@ -141,7 +144,9 @@ export function StoryboardCard({ output }: { output: unknown }) {
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold">{board.title}</h3>
-          <p className="text-xs text-muted-foreground">{board.scenes.length}-scene storyboard</p>
+          <p className="text-xs text-muted-foreground">
+            {total}-scene storyboard · Hook → Narrative → Close
+          </p>
         </div>
         <button
           type="button"
@@ -160,20 +165,29 @@ export function StoryboardCard({ output }: { output: unknown }) {
 
       {/* Scenes grid */}
       <div className="divide-y divide-white/5">
-        {board.scenes.map((scene) => (
-          <div key={scene.scene} className="flex gap-3 p-4">
-            {/* Frame image with loading / retry states */}
-            <div className="shrink-0">
-              <SceneFrame scene={scene} />
-            </div>
+        {board.scenes.map((scene, i) => {
+          const role = cinematicSceneRole(i, total);
+          const roleStyle = CINEMATIC_ROLE_STYLES[role];
+          return (
+            <div key={scene.scene} className="flex gap-3 p-4">
+              {/* Frame image with loading / retry states */}
+              <div className="shrink-0">
+                <SceneFrame scene={scene} />
+              </div>
 
-            {/* Scene details */}
-            <div className="min-w-0 flex-1 space-y-1">
-              <p className="text-xs font-semibold leading-tight text-foreground">{scene.title}</p>
-              <p className="text-xs leading-relaxed text-muted-foreground">{scene.description}</p>
+              {/* Scene details */}
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${roleStyle.bg} ${roleStyle.text} ${roleStyle.border}`}>
+                    {role}
+                  </span>
+                </div>
+                <p className="text-xs font-semibold leading-tight text-foreground">{scene.title}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">{scene.description}</p>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

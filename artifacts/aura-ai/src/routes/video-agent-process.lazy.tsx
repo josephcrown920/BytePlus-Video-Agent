@@ -1,6 +1,7 @@
 import { createLazyFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import {
   CheckCircle2, Circle, Loader2, AlertCircle,
   Film, ArrowRight, Wand2, Mic, Layers, Clapperboard, FileText,
@@ -74,6 +75,18 @@ function AgentProcessing() {
 
     abortRef.current = new AbortController();
 
+    // Resolve auth token once at pipeline start
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      setError("Not signed in. Please sign in and try again.");
+      return;
+    }
+    const authHeaders = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    };
+
     try {
       // ── Step 1: Generate Script ──
       setStep("script", "running");
@@ -81,7 +94,7 @@ function AgentProcessing() {
 
       const scriptRes = await fetch("/api/video-agent/generate-script", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders,
         body: JSON.stringify({
           prompt: project.prompt,
           style: project.style,
@@ -146,7 +159,7 @@ function AgentProcessing() {
         try {
           const frameRes = await fetch("/api/video-agent/generate-frame", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders,
             body: JSON.stringify({ prompt: `${sc.description}. Style: ${styleHint}. Cinematic keyframe.` }),
             signal: abortRef.current?.signal,
           });

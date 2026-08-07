@@ -56,15 +56,49 @@ const SceneSchema = z.object({
 
 const ScriptSchema = z.object({
   title: z.string(),
+  /** 0-3 s sensory shock — the instant-stop moment that halts the scroll. */
+  hook: z.string(),
   scenes: z.array(SceneSchema).min(1),
+  /** Seamless loop line or stinger that makes the viewer replay. */
+  close: z.string(),
+  /** Detected energy level — used to pick a title template. */
+  mood: z.enum(["high-energy", "calm", "dramatic", "inspirational"]).optional(),
 });
 
+// ─── Cinematic Viralist 3-step blueprint ─────────────────────────────────────
+// Structure: Sensory Hook (0-3 s) → Narrative Mid-Roll (3-15 s) → Aesthetic Close (15 s+)
+// Every generated script MUST follow this arc.
+const CINEMATIC_VIRALIST_SNIPPET = `
+## CINEMATIC VIRALIST BLUEPRINT (mandatory)
+
+Every script you generate MUST follow this 3-step structure:
+
+### STEP 1 — SENSORY HOOK (0-3 s)
+The first frame must be a sensory shock — a visual or auditory provocation that stops the scroll in under one second.
+Techniques: unexpected contrast, visceral close-up, fast cut on beat, a bold question, an unresolved action.
+Do NOT open with a logo, a title card, a wide establishing shot, or any form of introduction.
+Output this as the "hook" field: one punchy sentence describing the exact opening image or sound.
+
+### STEP 2 — NARRATIVE MID-ROLL (3-15 s)
+Build tension and meaning across 2-5 tightly edited scenes.
+Each scene must earn its place: advance the story, deepen emotion, or raise a question.
+No filler. No recaps. No transitions for their own sake.
+
+### STEP 3 — AESTHETIC CLOSE (15 s+)
+End on an image or line that creates a desire to loop or share — a seamless loop, a callback to the hook, or a stinger.
+Output this as the "close" field: one sentence describing the final image or spoken line.
+
+Energy detection: if the topic, style, or user language signals high-energy (hype, launch, sport, party, action, fast, epic, loud), set mood to "high-energy".
+`;
+
 const SCRIPT_SYSTEM = `You are a professional video scriptwriter and creative director for Aura, a premium AI content studio.
-Given a user's video topic and parameters, generate a complete video production plan.
+Given a user's video topic and parameters, generate a complete video production plan using the Cinematic Viralist blueprint.
+${CINEMATIC_VIRALIST_SNIPPET}
 
 Return ONLY a JSON object with this exact structure:
 {
   "title": "short engaging title for the video",
+  "hook": "one-sentence sensory shock — the opening 0-3 s image or sound that stops the scroll",
   "scenes": [
     {
       "index": 0,
@@ -73,11 +107,16 @@ Return ONLY a JSON object with this exact structure:
       "description": "detailed cinematic visual description: what the camera sees, lighting, motion, composition, color grade",
       "duration": 8
     }
-  ]
+  ],
+  "close": "one-sentence description of the final image or spoken line — seamless loop or stinger",
+  "mood": "high-energy | calm | dramatic | inspirational"
 }
 
 Rules:
 - Create 4-8 scenes depending on target duration
+- Scene at index 0 is the HOOK scene (0-3 s visceral opener)
+- Middle scenes form the NARRATIVE MID-ROLL (build tension, earn every cut)
+- Final scene is the AESTHETIC CLOSE (loop-worthy or stinger)
 - Each scene voiceover should read naturally in its duration seconds
 - Visual descriptions must be specific, cinematic, and detailed enough to generate a keyframe image
 - Total scene durations should add up to approximately the target duration

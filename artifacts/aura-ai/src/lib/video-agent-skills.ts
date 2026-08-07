@@ -10,6 +10,59 @@
 import { z } from "zod";
 
 // ────────────────────────────────────────────────────────────────────────────
+// 0. Cinematic Viralist — 3-step structure blueprint
+//    Structure: Sensory Hook (0-3 s) → Narrative Mid-Roll (3-15 s) → Aesthetic Close (15 s+)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Cinematic Viralist 3-step blueprint snippet.
+ * Inject into any system prompt that generates video scripts to enforce
+ * the Hook → Narrative → Close arc that drives retention and replays.
+ */
+export const CINEMATIC_VIRALIST_SNIPPET = `
+## CINEMATIC VIRALIST BLUEPRINT (mandatory)
+
+Every script you generate MUST follow this 3-step structure:
+
+### STEP 1 — SENSORY HOOK (0-3 s)
+The first frame is a sensory shock — a visual or auditory provocation that stops the scroll in under one second.
+Techniques: unexpected contrast, visceral close-up, fast cut on beat, a bold question, an unresolved action.
+Do NOT open with a logo, a title card, a wide establishing shot, or any introduction.
+Output as the "hook" field: one punchy sentence — the exact opening image or sound.
+
+### STEP 2 — NARRATIVE MID-ROLL (3-15 s)
+Build tension and meaning across tightly edited scenes.
+Each scene must earn its place: advance the story, deepen emotion, or raise a question.
+No filler. No recaps. No transitions for their own sake.
+
+### STEP 3 — AESTHETIC CLOSE (15 s+)
+End on an image or line that creates a desire to loop or share — a seamless loop, a callback to the hook, or a stinger.
+Output as the "close" field: one sentence — the final image or spoken line.
+
+Energy detection: if the topic, style, or user language signals high-energy (hype, launch, sport, party, action, fast, epic, loud),
+set mood to "high-energy" to trigger the Glitch title template.
+`;
+
+/**
+ * Returns the scene role label for the Cinematic Viralist 3-step structure.
+ * - Scene 0 → "Hook"
+ * - Last scene → "Close"
+ * - Everything in between → "Narrative"
+ */
+export function cinematicSceneRole(index: number, total: number): "Hook" | "Narrative" | "Close" {
+  if (index === 0) return "Hook";
+  if (index === total - 1) return "Close";
+  return "Narrative";
+}
+
+/** Role badge colour tokens for Hook / Narrative / Close. */
+export const CINEMATIC_ROLE_STYLES = {
+  Hook: { bg: "bg-orange-500/15", text: "text-orange-400", border: "border-orange-500/20" },
+  Narrative: { bg: "bg-primary/10", text: "text-primary", border: "border-primary/20" },
+  Close: { bg: "bg-violet-500/15", text: "text-violet-400", border: "border-violet-500/20" },
+} as const;
+
+// ────────────────────────────────────────────────────────────────────────────
 // 1. Cinematic Video Agent — system + analysis + shot prompts
 //    Source: cinematic-video-agent-skills/prompts/
 // ────────────────────────────────────────────────────────────────────────────
