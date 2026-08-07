@@ -78,6 +78,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "jspdf": "^4.2.1",
     "wouter": "catalog:"
   }
 }

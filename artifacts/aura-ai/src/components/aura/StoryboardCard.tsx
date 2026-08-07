@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
-import { Film, ImageOff, RefreshCw } from "lucide-react";
+import { Download, Film, ImageOff, Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { downloadStoryboardPdf, type StoryboardData } from "@/lib/export";
 
 type Scene = {
   scene: number;
@@ -22,11 +23,7 @@ type SceneImageState =
   | { status: "error" }
   | { status: "retrying" };
 
-function SceneFrame({
-  scene,
-}: {
-  scene: Scene;
-}) {
+function SceneFrame({ scene }: { scene: Scene }) {
   const [imgState, setImgState] = useState<SceneImageState>(
     scene.imageUrl ? { status: "loading" } : { status: "error" },
   );
@@ -122,7 +119,18 @@ function SceneFrame({
 
 export function StoryboardCard({ output }: { output: unknown }) {
   const board = output as StoryboardOutput;
+  const [pdfLoading, setPdfLoading] = useState(false);
+
   if (!board?.title || !Array.isArray(board.scenes)) return null;
+
+  async function handleDownload() {
+    setPdfLoading(true);
+    try {
+      await downloadStoryboardPdf(board as StoryboardData);
+    } finally {
+      setPdfLoading(false);
+    }
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface">
@@ -135,6 +143,19 @@ export function StoryboardCard({ output }: { output: unknown }) {
           <h3 className="truncate text-sm font-semibold">{board.title}</h3>
           <p className="text-xs text-muted-foreground">{board.scenes.length}-scene storyboard</p>
         </div>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={pdfLoading}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground disabled:opacity-50"
+        >
+          {pdfLoading ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <Download className="size-3" />
+          )}
+          {pdfLoading ? "Generating…" : "PDF"}
+        </button>
       </div>
 
       {/* Scenes grid */}

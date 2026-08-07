@@ -1,6 +1,7 @@
-import { Copy, Hash, MessageSquare } from "lucide-react";
+import { Copy, Download, Hash, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { downloadCaptionsTxt, type CaptionsData } from "@/lib/export";
 
 type Caption = {
   platform: string;
@@ -78,6 +79,10 @@ export function CaptionsCard({ output }: { output: unknown }) {
   const data = output as CaptionsOutput;
   if (!Array.isArray(data?.captions) || data.captions.length === 0) return null;
 
+  function handleDownload() {
+    downloadCaptionsTxt(data as CaptionsData);
+  }
+
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface">
       {/* Header */}
@@ -91,6 +96,14 @@ export function CaptionsCard({ output }: { output: unknown }) {
             {data.captions.length} platform{data.captions.length !== 1 ? "s" : ""} · ready to post
           </p>
         </div>
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+        >
+          <Download className="size-3" />
+          .txt
+        </button>
       </div>
 
       {/* Captions */}

@@ -1,4 +1,5 @@
-import { Clapperboard, Clock } from "lucide-react";
+import { Clapperboard, Clock, Download } from "lucide-react";
+import { downloadScriptPdf, type ScriptData } from "@/lib/export";
 
 type Scene = {
   scene: number;
@@ -24,6 +25,10 @@ export function ScriptCard({ output }: { output: unknown }) {
     reel: "Reel",
   };
 
+  function handleDownload() {
+    downloadScriptPdf(script as ScriptData);
+  }
+
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface">
       {/* Header */}
@@ -38,6 +43,14 @@ export function ScriptCard({ output }: { output: unknown }) {
             {script.scenes.length} scenes
           </p>
         </div>
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+        >
+          <Download className="size-3" />
+          PDF
+        </button>
       </div>
 
       {/* Scenes */}
