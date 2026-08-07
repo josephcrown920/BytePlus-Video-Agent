@@ -1,8 +1,56 @@
 import { Router, type Request, type Response } from "express";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createClient } from "@supabase/supabase-js";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText, tool, type LanguageModel, type UIMessage } from "ai";
 import { z } from "zod";
+
+export type ModelId = "gpt" | "claude" | "gemini" | "grok";
+
+export const MODEL_LABELS: Record<ModelId, string> = {
+  gpt: "GPT-5 Terra",
+  claude: "Claude Sonnet",
+  gemini: "Gemini Flash",
+  grok: "Grok-3 Mini",
+};
+
+function resolveModel(modelId: ModelId, openaiBaseUrl: string, openaiApiKey: string): LanguageModel {
+  switch (modelId) {
+    case "claude": {
+      const baseURL = process.env["AI_INTEGRATIONS_ANTHROPIC_BASE_URL"];
+      const apiKey = process.env["AI_INTEGRATIONS_ANTHROPIC_API_KEY"];
+      if (!baseURL || !apiKey) throw new Error("Claude is not configured");
+      const anthropic = createAnthropic({ baseURL, apiKey });
+      return anthropic("claude-sonnet-4-6");
+    }
+    case "gemini": {
+      const baseURL = process.env["AI_INTEGRATIONS_GEMINI_BASE_URL"];
+      const apiKey = process.env["AI_INTEGRATIONS_GEMINI_API_KEY"];
+      if (!baseURL || !apiKey) throw new Error("Gemini is not configured");
+      const google = createGoogleGenerativeAI({ baseURL, apiKey });
+      return google("gemini-3-flash-preview");
+    }
+    case "grok": {
+      const apiKey = process.env["XAI_API_KEY"];
+      if (!apiKey) throw new Error("xAI API key not configured — add XAI_API_KEY to secrets");
+      const xai = createOpenAICompatible({
+        name: "xai",
+        baseURL: "https://api.x.ai/v1",
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      return xai("grok-3-mini");
+    }
+    default: {
+      const gateway = createOpenAICompatible({
+        name: "replit-openai",
+        baseURL: openaiBaseUrl,
+        headers: { Authorization: `Bearer ${openaiApiKey}` },
+      });
+      return gateway("gpt-5.6-terra");
+    }
+  }
+}
 
 const router = Router();
 
@@ -107,9 +155,10 @@ router.post("/", async (req: Request, res: Response) => {
   const userId = userData.user.id;
 
   // ── Parse body ────────────────────────────────────────────────────────────
-  const { messages, id: threadId } = req.body as {
+  const { messages, id: threadId, model: modelId = "gpt" } = req.body as {
     messages?: unknown;
     id?: unknown;
+    model?: ModelId;
   };
   if (!Array.isArray(messages)) {
     res.status(400).json({ error: "messages array is required" });
@@ -180,12 +229,14 @@ router.post("/", async (req: Request, res: Response) => {
     memoryPreamble = `\n\nLong-term memory about this user:\n${memData.map((m) => `- ${m.content}`).join("\n")}`;
   }
 
-  // ── AI gateway ────────────────────────────────────────────────────────────
-  const gateway = createOpenAICompatible({
-    name: "replit-openai",
-    baseURL: openaiBaseUrl,
-    headers: { Authorization: `Bearer ${openaiApiKey}` },
-  });
+  // ── Resolve AI model ──────────────────────────────────────────────────────
+  let model: LanguageModel;
+  try {
+    model = resolveModel((modelId as ModelId) ?? "gpt", openaiBaseUrl, openaiApiKey);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+    return;
+  }
 
   // ── Agent tools ───────────────────────────────────────────────────────────
   // Shared writer — set synchronously inside createUIMessageStream.execute (before any tool runs)
@@ -811,7 +862,7 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
       videoProgressWriter = writer;
 
       const result = streamText({
-        model: gateway("gpt-5.6-terra") as unknown as LanguageModel,
+        model,
         system: SYSTEM + memoryPreamble,
         messages: modelMessages,
         tools,

@@ -4,6 +4,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import {
   ArrowUp,
   Brain,
+  ChevronDown,
   Clapperboard,
   Code2,
   Film,
@@ -38,6 +39,13 @@ import { ScriptCard } from "./ScriptCard";
 import { CaptionsCard } from "./CaptionsCard";
 import { StoryboardCard } from "./StoryboardCard";
 import { useTypewriter } from "./useTypewriter";
+
+const MODEL_META = {
+  gpt:    { label: "GPT-5 Terra",   short: "GPT-5",   dot: "bg-emerald-400" },
+  claude: { label: "Claude Sonnet", short: "Claude",  dot: "bg-orange-400"  },
+  gemini: { label: "Gemini Flash",  short: "Gemini",  dot: "bg-blue-400"    },
+  grok:   { label: "Grok-3 Mini",   short: "Grok",    dot: "bg-violet-400"  },
+} as const;
 
 const DEMO_PHRASES = [
   "Search the web for the best AI design tools right now…",
@@ -103,6 +111,8 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
   const [threads, setThreads] = useState<ThreadSummary[]>(initialThreads);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<"gpt" | "claude" | "gemini" | "grok">("gpt");
   const [memories, setMemories] = useState<{ id: string; content: string }[]>([]);
   const [input, setInput] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -121,10 +131,19 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
           if (data.session?.access_token) {
             headers.set("Authorization", `Bearer ${data.session.access_token}`);
           }
-          return fetch(url, { ...options, headers });
+          // Inject selected model into request body
+          let body = options?.body;
+          if (typeof body === "string") {
+            try {
+              const parsed = JSON.parse(body) as Record<string, unknown>;
+              body = JSON.stringify({ ...parsed, model: selectedModel });
+            } catch { /* leave as-is */ }
+          }
+          return fetch(url, { ...options, headers, body });
         },
       }),
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedModel],
   );
 
   const { messages, sendMessage, status, stop, error } = useChat({
@@ -240,7 +259,7 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
           </button>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-            Aura-1 Pro · search, browse, images, memory
+            {MODEL_META[selectedModel].label} · search, browse, images, memory
           </div>
         </header>
 
@@ -542,10 +561,34 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                   <span className="text-[10px] text-muted-foreground">
                     Enter to send · Shift+Enter for a new line
                   </span>
-                  <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                    <Sparkles className="size-3" />
-                    Tools enabled
-                  </span>
+                  {/* Model picker */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setModelPickerOpen((v) => !v)}
+                      className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+                    >
+                      <span className={`size-1.5 rounded-full ${MODEL_META[selectedModel].dot}`} />
+                      {MODEL_META[selectedModel].short}
+                      <ChevronDown className="size-2.5" />
+                    </button>
+                    {modelPickerOpen && (
+                      <div className="absolute bottom-full right-0 mb-1 w-44 overflow-hidden rounded-xl border border-white/10 bg-surface shadow-xl backdrop-blur-xl">
+                        {(Object.entries(MODEL_META) as [typeof selectedModel, (typeof MODEL_META)[typeof selectedModel]][]).map(([id, meta]) => (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => { setSelectedModel(id); setModelPickerOpen(false); }}
+                            className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs transition-colors hover:bg-white/5 ${selectedModel === id ? "text-foreground" : "text-muted-foreground"}`}
+                          >
+                            <span className={`size-2 rounded-full ${meta.dot}`} />
+                            <span className="flex-1">{meta.label}</span>
+                            {selectedModel === id && <Sparkles className="size-3 text-primary" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
