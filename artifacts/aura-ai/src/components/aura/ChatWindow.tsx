@@ -33,7 +33,14 @@ import {
   listThreads,
   type ThreadSummary,
 } from "@/lib/threads";
+import {
+  deleteContentItem,
+  listContentItems,
+  renameContentItem,
+  type ContentItem,
+} from "@/lib/content";
 import { ThreadSidebar } from "./ThreadSidebar";
+import { ContentLibraryModal } from "./ContentLibraryModal";
 import { ToolActivity } from "./ToolActivity";
 import { ScriptCard } from "./ScriptCard";
 import { CaptionsCard } from "./CaptionsCard";
@@ -111,6 +118,8 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
   const [threads, setThreads] = useState<ThreadSummary[]>(initialThreads);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [contentItems, setContentItems] = useState<ContentItem[]>([]);
+  const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState<"gpt" | "claude" | "gemini" | "grok">("gpt");
   const [memories, setMemories] = useState<{ id: string; content: string }[]>([]);
@@ -164,16 +173,29 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
     }
   }, []);
 
+  const refreshContent = useCallback(async () => {
+    try {
+      setContentItems(await listContentItems());
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     inputRef.current?.focus();
   }, [threadId]);
 
   useEffect(() => {
+    void refreshContent();
+  }, [refreshContent]);
+
+  useEffect(() => {
     if (status === "ready") {
       inputRef.current?.focus();
       void refreshThreads();
+      void refreshContent();
     }
-  }, [status, refreshThreads]);
+  }, [status, refreshThreads, refreshContent]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -239,12 +261,24 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
         activeId={threadId}
         open={sidebarOpen}
         email={user?.email ?? undefined}
+        contentItems={contentItems}
         onClose={() => setSidebarOpen(false)}
         onNew={handleNewThread}
         onDelete={handleDeleteThread}
         onOpenMemory={openMemory}
         onSignOut={() => {
           void signOut().then(() => navigate({ to: "/auth" }));
+        }}
+        onOpenContent={(item) => { setSelectedContent(item); setSidebarOpen(false); }}
+        onDeleteContent={async (id) => {
+          await deleteContentItem(id);
+          setContentItems((prev) => prev.filter((i) => i.id !== id));
+          if (selectedContent?.id === id) setSelectedContent(null);
+        }}
+        onRenameContent={async (id, title) => {
+          await renameContentItem(id, title);
+          setContentItems((prev) => prev.map((i) => (i.id === id ? { ...i, title } : i)));
+          if (selectedContent?.id === id) setSelectedContent((prev) => prev ? { ...prev, title } : null);
         }}
       />
 
@@ -598,6 +632,17 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
           </div>
         </div>
       </div>
+
+      {selectedContent && (
+        <ContentLibraryModal
+          item={selectedContent}
+          onClose={() => setSelectedContent(null)}
+          onRename={(id, title) => {
+            setContentItems((prev) => prev.map((i) => (i.id === id ? { ...i, title } : i)));
+            setSelectedContent((prev) => (prev ? { ...prev, title } : null));
+          }}
+        />
+      )}
 
       {memoryOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">

@@ -504,17 +504,20 @@ Use 3-6 scenes. Be vivid, cinematic, and specific.`;
           };
           const content = json.choices?.[0]?.message?.content;
           if (!content) return { error: "No script returned from model." };
-          return JSON.parse(content) as {
+          const scriptResult = JSON.parse(content) as {
             title: string;
             format: string;
             total_duration_seconds: number;
-            scenes: {
-              scene: number;
-              description: string;
-              dialogue: string;
-              duration_seconds: number;
-            }[];
+            scenes: { scene: number; description: string; dialogue: string; duration_seconds: number }[];
           };
+          if (scriptResult.title) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            void (supabase as any).from("content_items").insert({
+              user_id: userId, thread_id: threadId, type: "script",
+              title: scriptResult.title, data: scriptResult,
+            });
+          }
+          return scriptResult;
         } catch (err) {
           return { error: `Script generation failed: ${(err as Error).message}` };
         }
@@ -571,10 +574,16 @@ Only include the requested platforms.`;
           };
           const content = json.choices?.[0]?.message?.content;
           if (!content) return { error: "No captions returned from model." };
-          return JSON.parse(content) as {
+          const captionsResult = JSON.parse(content) as {
             topic: string;
             captions: { platform: string; caption: string; hashtags: string[] }[];
           };
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          void (supabase as any).from("content_items").insert({
+            user_id: userId, thread_id: threadId, type: "captions",
+            title: captionsResult.topic || "Social Captions", data: captionsResult,
+          });
+          return captionsResult;
         } catch (err) {
           return { error: `Caption generation failed: ${(err as Error).message}` };
         }
@@ -662,7 +671,13 @@ Return ONLY valid JSON (no markdown fences):
             }),
           );
 
-          return { ...board, scenes: scenesWithImages };
+          const finalBoard = { ...board, scenes: scenesWithImages };
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          void (supabase as any).from("content_items").insert({
+            user_id: userId, thread_id: threadId, type: "storyboard",
+            title: board.title, data: finalBoard,
+          });
+          return finalBoard;
         } catch (err) {
           return { error: `Storyboard generation failed: ${(err as Error).message}` };
         }
