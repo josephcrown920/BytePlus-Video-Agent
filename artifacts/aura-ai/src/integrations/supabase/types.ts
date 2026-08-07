@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      content_items: {
+        Row: {
+          id: string
+          user_id: string
+          thread_id: string | null
+          type: "script" | "captions" | "storyboard"
+          title: string
+          data: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          thread_id?: string | null
+          type: "script" | "captions" | "storyboard"
+          title: string
+          data?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          thread_id?: string | null
+          type?: "script" | "captions" | "storyboard"
+          title?: string
+          data?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
       memories: {
         Row: {
           content: string
