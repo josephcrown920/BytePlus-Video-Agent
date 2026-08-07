@@ -52,6 +52,67 @@ function resolveModel(modelId: ModelId, openaiBaseUrl: string, openaiApiKey: str
   }
 }
 
+// ── Shared image helper ───────────────────────────────────────────────────
+
+/** Minimal storage interface — avoids tying the helper to a concrete Supabase schema type. */
+interface StorageBucket {
+  upload(
+    path: string,
+    data: Uint8Array,
+    options?: { contentType?: string },
+  ): Promise<{ error: { message: string } | null }>;
+  createSignedUrl(
+    path: string,
+    expiresIn: number,
+  ): Promise<{ data: { signedUrl: string } | null; error: { message: string } | null }>;
+}
+interface MinimalSupabase {
+  storage: { from(bucket: string): StorageBucket };
+}
+
+/** Generate one scene image with up to maxAttempts retries and back-off. Returns null if all fail. */
+async function generateSceneImage(
+  prompt: string,
+  userId: string,
+  openaiBaseUrl: string,
+  openaiApiKey: string,
+  supabase: MinimalSupabase,
+  sceneIndex: number,
+  maxAttempts = 2,
+  backoffMs = 1500,
+): Promise<string | null> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      if (attempt > 1) await new Promise((r) => setTimeout(r, backoffMs));
+      const imgRes = await fetch(`${openaiBaseUrl}/images/generations`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${openaiApiKey}`,
+        },
+        body: JSON.stringify({ model: "gpt-image-1", prompt, size: "1024x1024" }),
+      });
+      if (!imgRes.ok) continue;
+      const imgJson = (await imgRes.json()) as { data?: { b64_json?: string }[] };
+      const base64 = imgJson.data?.[0]?.b64_json;
+      if (!base64) continue;
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const path = `${userId}/${Date.now()}-sb${sceneIndex}-${Math.random().toString(36).slice(2, 6)}.png`;
+      const { error: uploadError } = await supabase.storage
+        .from("artifacts")
+        .upload(path, bytes, { contentType: "image/png" });
+      if (uploadError) continue;
+      const { data: signed } = await supabase.storage
+        .from("artifacts")
+        .createSignedUrl(path, 60 * 60 * 24 * 365);
+      if (signed?.signedUrl) return signed.signedUrl;
+    } catch { /* retry */ }
+  }
+  return null;
+}
+
+export { generateSceneImage };
+
 const router = Router();
 
 const SYSTEM = `You are Aura, a premium autonomous AI agent for designers, founders and engineers.
@@ -586,40 +647,18 @@ Return ONLY valid JSON (no markdown fences):
           };
 
           // Step 2: generate a reference image for each scene in parallel
+          // Each scene gets up to 2 attempts with 1.5 s back-off before falling back to null.
           const scenesWithImages = await Promise.all(
             board.scenes.map(async (scene) => {
-              try {
-                const imgRes = await fetch(`${openaiBaseUrl}/images/generations`, {
-                  method: "POST",
-                  headers: {
-                    "content-type": "application/json",
-                    Authorization: `Bearer ${openaiApiKey}`,
-                  },
-                  body: JSON.stringify({
-                    model: "gpt-image-1",
-                    prompt: scene.image_prompt,
-                    size: "1024x1024",
-                  }),
-                });
-                if (!imgRes.ok) return { ...scene, imageUrl: null };
-                const imgJson = (await imgRes.json()) as {
-                  data?: { b64_json?: string }[];
-                };
-                const base64 = imgJson.data?.[0]?.b64_json;
-                if (!base64) return { ...scene, imageUrl: null };
-                const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-                const path = `${userId}/${Date.now()}-sb${scene.scene}-${Math.random().toString(36).slice(2, 6)}.png`;
-                const { error: uploadError } = await supabase.storage
-                  .from("artifacts")
-                  .upload(path, bytes, { contentType: "image/png" });
-                if (uploadError) return { ...scene, imageUrl: null };
-                const { data: signed } = await supabase.storage
-                  .from("artifacts")
-                  .createSignedUrl(path, 60 * 60 * 24 * 365);
-                return { ...scene, imageUrl: signed?.signedUrl ?? null };
-              } catch {
-                return { ...scene, imageUrl: null };
-              }
+              const imageUrl = await generateSceneImage(
+                scene.image_prompt,
+                userId,
+                openaiBaseUrl,
+                openaiApiKey,
+                supabase,
+                scene.scene,
+              );
+              return { ...scene, imageUrl };
             }),
           );
 
