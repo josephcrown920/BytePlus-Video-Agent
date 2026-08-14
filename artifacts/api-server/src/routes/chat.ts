@@ -120,7 +120,7 @@ const SYSTEM = `You are Aura, a premium autonomous AI agent for designers, found
 You have real tools. Use them proactively instead of guessing:
 - web_search + fetch_url for anything current, factual, or link-based. Always cite sources as markdown links.
 - generate_image whenever a visual is requested. After it returns, embed the image with markdown: ![alt](imageUrl).
-- generate_video whenever someone asks for a video clip, reel, animation or moving visual. After it returns, embed with HTML: <video src="videoUrl" controls autoplay loop muted style="max-width:100%;border-radius:12px"></video>.
+- generate_video whenever someone asks for a video clip, reel, animation or moving visual. After it returns, embed with HTML: <video src="videoUrl" controls autoplay loop muted style="max-width:100%;border-radius:12px"></video>. When the user asks for an ad, reel, or any video with narration, always include a voiceover_text with the script dialogue — never leave it empty for ads.
 - generate_script to produce a structured video/ad/reel script with scenes and dialogue.
 - generate_captions to craft platform-optimised social captions for TikTok, Instagram and LinkedIn.
 - storyboard to break a concept into numbered visual scenes, each with a reference image.
@@ -702,7 +702,7 @@ Return ONLY valid JSON (no markdown fences):
 
     generate_video: tool({
       description:
-        "Generate a short AI video clip from a text prompt. Creates a real MP4 video by generating cinematic key-frame images and blending them together with smooth crossfade transitions. Use whenever someone asks for a video, reel, clip, short film, or animated visual. Returns a URL to the MP4 file.",
+        "Generate a short AI video clip from a text prompt. Creates a real MP4 video by generating cinematic key-frame images and blending them together with smooth crossfade transitions. Optionally adds an AI voiceover narration to the video. Use whenever someone asks for a video, reel, clip, short film, or animated visual — especially ads, reels, or branded content where a voiceover would enhance the output. Returns a URL to the MP4 file.",
       inputSchema: z.object({
         prompt: z.string().describe("Describe the video scene or concept to generate"),
         style: z
@@ -711,8 +711,14 @@ Return ONLY valid JSON (no markdown fences):
           .describe(
             "Visual style, e.g. 'cinematic 4K', 'anime', 'photorealistic', 'neon noir', 'golden hour'",
           ),
+        voiceover_text: z
+          .string()
+          .optional()
+          .describe(
+            "Script text to synthesize as an AI voiceover narration and mix into the video audio track. Provide this whenever the user asks for an ad, reel, or video with narration or voice.",
+          ),
       }),
-      execute: async ({ prompt, style }) => {
+      execute: async ({ prompt, style, voiceover_text }) => {
         try {
           const styleHint = style ? ` Visual style: ${style}.` : "";
           const frameCount = 3;
@@ -888,9 +894,92 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
               { timeout: 120_000 },
             );
 
-            // Step 4: Upload MP4 to Supabase Storage
+            // Step 4 (optional): Synthesize voiceover and mux into the video
+            let finalVideoPath = outputPath;
+            if (voiceover_text?.trim()) {
+              writeProgress("Synthesizing voiceover…");
+              try {
+                const audioPath = path.join(tmpDir, "voiceover.mp3");
+                const muxedPath = path.join(tmpDir, "video_with_audio.mp4");
+
+                // Prefer ElevenLabs if key is present, otherwise use OpenAI TTS
+                const elevenLabsKey = process.env["ELEVENLABS_API_KEY"];
+                let audioBuffer: Buffer | null = null;
+
+                if (elevenLabsKey) {
+                  // ElevenLabs TTS — Rachel voice (professional, warm)
+                  const elRes = await fetch(
+                    "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
+                    {
+                      method: "POST",
+                      headers: {
+                        "xi-api-key": elevenLabsKey,
+                        "content-type": "application/json",
+                        accept: "audio/mpeg",
+                      },
+                      body: JSON.stringify({
+                        text: voiceover_text,
+                        model_id: "eleven_turbo_v2_5",
+                        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+                      }),
+                    },
+                  );
+                  if (elRes.ok) {
+                    audioBuffer = Buffer.from(await elRes.arrayBuffer());
+                  }
+                }
+
+                if (!audioBuffer) {
+                  // OpenAI TTS fallback (alloy voice)
+                  const ttsRes = await fetch(`${openaiBaseUrl}/audio/speech`, {
+                    method: "POST",
+                    headers: {
+                      "content-type": "application/json",
+                      Authorization: `Bearer ${openaiApiKey}`,
+                    },
+                    body: JSON.stringify({
+                      model: "tts-1",
+                      input: voiceover_text,
+                      voice: "alloy",
+                      response_format: "mp3",
+                    }),
+                  });
+                  if (ttsRes.ok) {
+                    audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
+                  }
+                }
+
+                if (audioBuffer && audioBuffer.length > 0) {
+                  await fsp.writeFile(audioPath, audioBuffer);
+                  writeProgress("Mixing audio…");
+
+                  // Mux: copy video stream + re-encode audio to AAC, stop at shortest stream
+                  await execFileAsync(
+                    "ffmpeg",
+                    [
+                      "-i", outputPath,
+                      "-i", audioPath,
+                      "-c:v", "copy",
+                      "-c:a", "aac",
+                      "-map", "0:v:0",
+                      "-map", "1:a:0",
+                      "-shortest",
+                      "-y",
+                      muxedPath,
+                    ],
+                    { timeout: 60_000 },
+                  );
+                  finalVideoPath = muxedPath;
+                }
+              } catch (voiceErr) {
+                // Voiceover failure is non-fatal — fall back to silent video
+                console.error("Voiceover mux failed, using silent video:", voiceErr);
+              }
+            }
+
+            // Step 5: Upload MP4 to Supabase Storage
             writeProgress("Uploading video…");
-            const videoBuffer = await fsp.readFile(outputPath);
+            const videoBuffer = await fsp.readFile(finalVideoPath);
             const storagePath = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
 
             const { error: uploadError } = await supabase.storage
@@ -909,11 +998,8 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
 
             return { prompt, videoUrl: signed.signedUrl };
           } finally {
-            await Promise.allSettled([
-              ...framePaths.map((p) => fsp.unlink(p)),
-              fsp.unlink(outputPath).catch(() => {}),
-            ]);
-            await fsp.rmdir(tmpDir).catch(() => {});
+            // Remove the entire temp dir (handles frames, silent video, voiceover, and muxed output)
+            await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
           }
         } catch (err) {
           return { error: `Video generation failed: ${(err as Error).message}` };
