@@ -4,11 +4,15 @@ import { toast } from "sonner";
 import {
   Download, Film, Loader2, Plus, Trash2, Wand2,
   CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Eye, Pencil, Play,
+  Sparkles, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { supabase } from "@/integrations/supabase/client";
 import { videoAgentStore, vaUid, type VideoProject, type VideoScene } from "@/lib/video-agent-store";
+
+type HeyGenState = "idle" | "starting" | "polling" | "done" | "error";
 
 export const Route = createLazyFileRoute("/video-agent-edit")({
   component: VideoEditor,
@@ -24,10 +28,81 @@ function VideoEditor() {
   const [regenId, setRegenId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // ── HeyGen state ─────────────────────────────────────────────────────────
+  const [heygenAvailable, setHeygenAvailable] = useState(false);
+  const [heygenState, setHeygenState] = useState<HeyGenState>("idle");
+  const [heygenSessionId, setHeygenSessionId] = useState<string | null>(null);
+  const [heygenVideoUrl, setHeygenVideoUrl] = useState<string | null>(null);
+  const [heygenError, setHeygenError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     const p = videoAgentStore.get(id);
-    if (p) setProject(p);
+    if (p) {
+      setProject(p);
+      // Restore any previously-completed HeyGen video
+      if (p.exportUrl) {
+        setHeygenVideoUrl(p.exportUrl);
+        setHeygenState("done");
+      }
+    }
   }, [id]);
+
+  // Check HeyGen API key availability once on mount
+  useEffect(() => {
+    fetch("/api/video-agent/heygen-available")
+      .then((r) => r.json() as Promise<{ available: boolean }>)
+      .then(({ available }) => setHeygenAvailable(available))
+      .catch(() => {});
+  }, []);
+
+  // Poll HeyGen session status while generating
+  useEffect(() => {
+    if (heygenState !== "polling" || !heygenSessionId) return;
+
+    const doPoll = async () => {
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const token = session.session?.access_token ?? "";
+        const res = await fetch(`/api/video-agent/heygen-status/${heygenSessionId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return; // retry next tick
+
+        const payload = (await res.json()) as {
+          status: string;
+          videoUrl?: string;
+          thumbnailUrl?: string;
+          error?: string;
+        };
+
+        if (payload.status === "completed" && payload.videoUrl) {
+          clearInterval(pollRef.current!);
+          setHeygenVideoUrl(payload.videoUrl);
+          setHeygenState("done");
+          videoAgentStore.update(id, {
+            exportUrl: payload.videoUrl,
+            thumbnailUrl: payload.thumbnailUrl ?? null,
+            status: "exported",
+          });
+          refresh();
+          toast.success("HeyGen video is ready!");
+        } else if (payload.status === "failed") {
+          clearInterval(pollRef.current!);
+          setHeygenError(payload.error ?? "Generation failed");
+          setHeygenState("error");
+          toast.error(`HeyGen failed: ${payload.error ?? "unknown error"}`);
+        }
+        // else still processing — keep polling
+      } catch {
+        // network hiccup — retry next tick
+      }
+    };
+
+    doPoll(); // immediate first check
+    pollRef.current = setInterval(doPoll, 6_000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [heygenState, heygenSessionId, id]);
 
   function refresh() {
     const p = videoAgentStore.get(id);
@@ -75,6 +150,51 @@ function VideoEditor() {
     if (updated) {
       setProject({ ...updated });
       setSelectedIdx(Math.max(0, selectedIdx - 1));
+    }
+  }
+
+  // ── HeyGen generation handler ──────────────────────────────────────────────
+  async function handleGenerateWithHeyGen() {
+    if (!project) return;
+    if (heygenState === "starting" || heygenState === "polling") return;
+
+    setHeygenState("starting");
+    setHeygenError(null);
+    setHeygenVideoUrl(null);
+
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token ?? "";
+      if (!token) throw new Error("Not signed in — please sign in and try again");
+
+      const res = await fetch("/api/video-agent/generate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: project.title,
+          scenes: project.scenes.map((sc) => ({
+            title: sc.title,
+            script: sc.script,
+            description: sc.description,
+            duration: sc.duration,
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Server error (${res.status})`);
+      }
+
+      const { sessionId } = (await res.json()) as { sessionId: string };
+      setHeygenSessionId(sessionId);
+      setHeygenState("polling");
+      toast.success("HeyGen is generating your video — this typically takes 2–5 minutes.");
+    } catch (err) {
+      const msg = (err as Error).message;
+      setHeygenError(msg);
+      setHeygenState("error");
+      toast.error(msg);
     }
   }
 
@@ -322,7 +442,35 @@ function VideoEditor() {
               </div>
             </div>
 
-            <div className="border-t border-border/50 p-3 flex gap-2">
+            {/* HeyGen video result */}
+            {heygenState === "done" && heygenVideoUrl && (
+              <div className="mx-4 mb-3 rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
+                  <Sparkles className="h-3.5 w-3.5" /> HeyGen Video Ready
+                </div>
+                <video
+                  src={heygenVideoUrl}
+                  controls
+                  className="w-full rounded-lg border border-border/50"
+                />
+                <a
+                  href={heygenVideoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary"
+                >
+                  <ExternalLink className="h-3 w-3" /> Open in new tab
+                </a>
+              </div>
+            )}
+
+            {heygenState === "error" && heygenError && (
+              <div className="mx-4 mb-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                {heygenError}
+              </div>
+            )}
+
+            <div className="border-t border-border/50 p-3 flex gap-2 flex-wrap">
               <Button size="sm" variant="secondary" className="flex-1 gap-1.5 text-xs"
                 onClick={() => navigate({ to: "/video-agent" })}>
                 New video
@@ -332,6 +480,28 @@ function VideoEditor() {
                 {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                 Export
               </Button>
+              {heygenAvailable && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="w-full gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/10"
+                  onClick={handleGenerateWithHeyGen}
+                  disabled={heygenState === "starting" || heygenState === "polling"}
+                >
+                  {heygenState === "starting" || heygenState === "polling" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  {heygenState === "starting"
+                    ? "Starting HeyGen…"
+                    : heygenState === "polling"
+                    ? "Generating with HeyGen…"
+                    : heygenState === "done"
+                    ? "Regenerate with HeyGen"
+                    : "Generate with HeyGen"}
+                </Button>
+              )}
             </div>
           </div>
         </div>

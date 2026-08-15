@@ -191,4 +191,175 @@ router.post("/generate-frame", async (req: Request, res: Response) => {
   }
 });
 
+// ── HeyGen Integration ────────────────────────────────────────────────────────
+
+const HEYGEN_BASE_URL = "https://api.heygen.com";
+
+function getHeyGenApiKey(): string | null {
+  return process.env["HEYGEN_API_KEY"] ?? null;
+}
+
+function heygenHeaders(apiKey: string): Record<string, string> {
+  return {
+    "X-Api-Key": apiKey,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+}
+
+/**
+ * GET /api/video-agent/heygen-available
+ * No auth required — safe capability probe for the frontend.
+ */
+router.get("/heygen-available", (_req, res) => {
+  res.json({ available: !!getHeyGenApiKey() });
+});
+
+/**
+ * POST /api/video-agent/generate-video
+ * Assembles the project's script into a single prompt and creates a HeyGen
+ * Video Agent session (mode: generate). Returns { sessionId } immediately;
+ * the frontend should poll /heygen-status/:sessionId for completion.
+ */
+router.post("/generate-video", async (req: Request, res: Response) => {
+  const userId = await requireAuth(req, res);
+  if (!userId) return;
+
+  const apiKey = getHeyGenApiKey();
+  if (!apiKey) {
+    res.status(503).json({
+      error: "HeyGen API key not configured. Add HEYGEN_API_KEY to environment secrets.",
+    });
+    return;
+  }
+
+  const { title, scenes } = req.body as {
+    title: string;
+    scenes: Array<{ title: string; script: string; description: string; duration: number }>;
+  };
+
+  if (!Array.isArray(scenes) || scenes.length === 0) {
+    res.status(400).json({ error: "scenes array is required and must not be empty" });
+    return;
+  }
+
+  // Build a rich prompt from title + per-scene script and visual direction
+  const promptLines: string[] = [
+    `Video Title: ${title || "Untitled"}`,
+    "",
+    "Script:",
+    "",
+  ];
+  for (const sc of scenes) {
+    promptLines.push(`[${sc.title}] (${sc.duration}s)`);
+    if (sc.script)       promptLines.push(sc.script);
+    if (sc.description)  promptLines.push(`Visual: ${sc.description}`);
+    promptLines.push("");
+  }
+  // Trim to HeyGen's safe prompt length
+  const prompt = promptLines.join("\n").slice(0, 4000);
+
+  try {
+    const createRes = await fetch(`${HEYGEN_BASE_URL}/v3/video-agents`, {
+      method: "POST",
+      headers: heygenHeaders(apiKey),
+      body: JSON.stringify({ mode: "generate", prompt }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!createRes.ok) {
+      const body = await createRes.text().catch(() => "");
+      res
+        .status(502)
+        .json({ error: `HeyGen returned ${createRes.status}${body ? `: ${body.slice(0, 300)}` : ""}` });
+      return;
+    }
+
+    const data = (await createRes.json()) as { data?: { session_id?: string } };
+    const sessionId = data.data?.session_id;
+    if (!sessionId) {
+      res.status(502).json({ error: "HeyGen did not return a session_id" });
+      return;
+    }
+
+    console.info(`[heygen] session started: ${sessionId} for user ${userId}`);
+    res.json({ sessionId });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to start HeyGen generation";
+    console.error("heygen generate-video error:", msg);
+    res.status(502).json({ error: msg });
+  }
+});
+
+/**
+ * GET /api/video-agent/heygen-status/:sessionId
+ * Proxies the HeyGen Video Agent status check. When completed, also fetches
+ * the video record to return videoUrl and thumbnailUrl.
+ * Returns { status, videoUrl?, thumbnailUrl?, error? }
+ */
+router.get("/heygen-status/:sessionId", async (req: Request, res: Response) => {
+  const userId = await requireAuth(req, res);
+  if (!userId) return;
+
+  const apiKey = getHeyGenApiKey();
+  if (!apiKey) {
+    res.status(503).json({ error: "HeyGen API key not configured" });
+    return;
+  }
+
+  const { sessionId } = req.params;
+
+  try {
+    const statusRes = await fetch(`${HEYGEN_BASE_URL}/v3/video-agents/${sessionId}`, {
+      headers: heygenHeaders(apiKey),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!statusRes.ok) {
+      res.status(502).json({ error: `HeyGen status check failed (${statusRes.status})` });
+      return;
+    }
+
+    const statusData = (await statusRes.json()) as {
+      data?: { status?: string; video_id?: string; error_message?: string; error?: string };
+    };
+
+    const agentStatus = statusData.data?.status ?? "processing";
+    const videoId = statusData.data?.video_id;
+
+    if ((agentStatus === "completed" || agentStatus === "success") && videoId) {
+      // Fetch the video record for the URL
+      const videoRes = await fetch(`${HEYGEN_BASE_URL}/v3/videos/${videoId}`, {
+        headers: heygenHeaders(apiKey),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!videoRes.ok) {
+        // Completed but URL not ready yet — keep polling
+        res.json({ status: "processing" });
+        return;
+      }
+
+      const videoData = (await videoRes.json()) as {
+        data?: { video_url?: string; thumbnail_url?: string };
+      };
+
+      res.json({
+        status: "completed",
+        videoUrl: videoData.data?.video_url ?? null,
+        thumbnailUrl: videoData.data?.thumbnail_url ?? null,
+      });
+    } else if (agentStatus === "failed" || agentStatus === "error") {
+      const reason =
+        statusData.data?.error_message ?? statusData.data?.error ?? "Video generation failed";
+      res.json({ status: "failed", error: reason });
+    } else {
+      res.json({ status: agentStatus });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Status check failed";
+    res.status(502).json({ error: msg });
+  }
+});
+
 export default router;
