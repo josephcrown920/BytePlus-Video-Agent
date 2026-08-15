@@ -39,6 +39,12 @@ export type VideoProject = {
   updatedAt: number;
   exportUrl: string | null;
   thumbnailUrl: string | null;
+  /** HeyGen avatar look ID selected by the user (null = HeyGen default) */
+  heygenAvatarId?: string | null;
+  /** HeyGen voice ID selected by the user (null = HeyGen default) */
+  heygenVoiceId?: string | null;
+  /** HeyGen Video Agent session ID for polling (null when not started or completed) */
+  heygenSessionId?: string | null;
 };
 
 const STORE_KEY = "aurora.video-projects.v2";

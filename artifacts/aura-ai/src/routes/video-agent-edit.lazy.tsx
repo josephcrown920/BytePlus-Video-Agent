@@ -14,6 +14,21 @@ import { videoAgentStore, vaUid, type VideoProject, type VideoScene } from "@/li
 
 type HeyGenState = "idle" | "starting" | "polling" | "done" | "error";
 
+type HeyGenAvatar = {
+  id: string;
+  avatar_name: string;
+  preview_image_url?: string;
+  gender?: string;
+};
+
+type HeyGenVoice = {
+  voice_id: string;
+  name: string;
+  language?: string;
+  gender?: string;
+  preview_audio?: string;
+};
+
 export const Route = createLazyFileRoute("/video-agent-edit")({
   component: VideoEditor,
 });
@@ -36,6 +51,15 @@ function VideoEditor() {
   const [heygenError, setHeygenError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Avatar & voice picker
+  const [avatars, setAvatars] = useState<HeyGenAvatar[]>([]);
+  const [voices, setVoices] = useState<HeyGenVoice[]>([]);
+  const [avatarsLoading, setAvatarsLoading] = useState(false);
+  const [voicesLoading, setVoicesLoading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedAvatarId, setSelectedAvatarId] = useState<string | null>(null);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
+
   useEffect(() => {
     const p = videoAgentStore.get(id);
     if (p) {
@@ -45,6 +69,8 @@ function VideoEditor() {
         setHeygenVideoUrl(p.exportUrl);
         setHeygenState("done");
       }
+      if (p.heygenAvatarId) setSelectedAvatarId(p.heygenAvatarId);
+      if (p.heygenVoiceId)  setSelectedVoiceId(p.heygenVoiceId);
     }
   }, [id]);
 
@@ -55,6 +81,47 @@ function VideoEditor() {
       .then(({ available }) => setHeygenAvailable(available))
       .catch(() => {});
   }, []);
+
+  // Fetch avatar looks + voices whenever HeyGen becomes available
+  useEffect(() => {
+    if (!heygenAvailable) return;
+
+    let cancelled = false;
+
+    const loadCatalogs = async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      const authHeaders: Record<string, string> = token
+        ? { Authorization: `Bearer ${token}` }
+        : {};
+
+      setAvatarsLoading(true);
+      setVoicesLoading(true);
+
+      await Promise.all([
+        fetch("/api/video-agent/avatars", { headers: authHeaders })
+          .then((r) => {
+            if (!r.ok) throw new Error(`avatars ${r.status}`);
+            return r.json() as Promise<{ avatars: HeyGenAvatar[] }>;
+          })
+          .then(({ avatars }) => { if (!cancelled) setAvatars(avatars.slice(0, 24)); })
+          .catch(() => {})
+          .finally(() => { if (!cancelled) setAvatarsLoading(false); }),
+
+        fetch("/api/video-agent/voices", { headers: authHeaders })
+          .then((r) => {
+            if (!r.ok) throw new Error(`voices ${r.status}`);
+            return r.json() as Promise<{ voices: HeyGenVoice[] }>;
+          })
+          .then(({ voices }) => { if (!cancelled) setVoices(voices.slice(0, 30)); })
+          .catch(() => {})
+          .finally(() => { if (!cancelled) setVoicesLoading(false); }),
+      ]);
+    };
+
+    loadCatalogs();
+    return () => { cancelled = true; };
+  }, [heygenAvailable]);
 
   // Poll HeyGen session status while generating
   useEffect(() => {
@@ -153,6 +220,17 @@ function VideoEditor() {
     }
   }
 
+  // ── Avatar / voice selection handlers ────────────────────────────────────────
+  function handleSelectAvatar(avatarId: string | null) {
+    setSelectedAvatarId(avatarId);
+    videoAgentStore.update(id, { heygenAvatarId: avatarId });
+  }
+
+  function handleSelectVoice(voiceId: string | null) {
+    setSelectedVoiceId(voiceId);
+    videoAgentStore.update(id, { heygenVoiceId: voiceId });
+  }
+
   // ── HeyGen generation handler ──────────────────────────────────────────────
   async function handleGenerateWithHeyGen() {
     if (!project) return;
@@ -178,6 +256,8 @@ function VideoEditor() {
             description: sc.description,
             duration: sc.duration,
           })),
+          avatarId: selectedAvatarId ?? undefined,
+          voiceId: selectedVoiceId ?? undefined,
         }),
       });
 
@@ -441,6 +521,127 @@ function VideoEditor() {
                 </Button>
               </div>
             </div>
+
+            {/* Avatar & voice picker */}
+            {heygenAvailable && (
+              <div className="mx-4 mb-2">
+                <button
+                  onClick={() => setPickerOpen((o) => !o)}
+                  className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground py-1.5 transition-colors"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary/60" />
+                    Customize avatar &amp; voice
+                    {(selectedAvatarId || selectedVoiceId) && (
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] text-white">✓</span>
+                    )}
+                  </span>
+                  <ChevronRight className={`h-3.5 w-3.5 transition-transform ${pickerOpen ? "rotate-90" : ""}`} />
+                </button>
+
+                {pickerOpen && (
+                  <div className="mt-1.5 space-y-3 rounded-xl border border-border/50 bg-muted/20 p-3">
+                    {/* Avatar grid */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-[10px] uppercase tracking-widest text-muted-foreground">Avatar</label>
+                        {selectedAvatarId && (
+                          <button onClick={() => handleSelectAvatar(null)}
+                            className="text-[10px] text-muted-foreground hover:text-foreground">Clear</button>
+                        )}
+                      </div>
+                      {avatarsLoading ? (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Loading avatars…
+                        </div>
+                      ) : avatars.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No avatars available</p>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-1.5 max-h-44 overflow-y-auto pr-0.5">
+                          {avatars.map((av) => (
+                            <button
+                              key={av.id}
+                              onClick={() => handleSelectAvatar(av.id === selectedAvatarId ? null : av.id)}
+                              title={av.avatar_name}
+                              className={`relative rounded-lg overflow-hidden border transition-all ${
+                                av.id === selectedAvatarId
+                                  ? "border-primary ring-1 ring-primary/50"
+                                  : "border-border/40 opacity-70 hover:opacity-100 hover:border-border"
+                              }`}
+                            >
+                              {av.preview_image_url ? (
+                                <img src={av.preview_image_url} alt={av.avatar_name}
+                                  className="w-full aspect-square object-cover" />
+                              ) : (
+                                <div className="w-full aspect-square bg-muted/50 flex items-center justify-center">
+                                  <span className="text-[10px] text-muted-foreground">{av.avatar_name.slice(0, 2)}</span>
+                                </div>
+                              )}
+                              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-1 pb-0.5">
+                                <span className="text-[8px] text-white/90 truncate block">{av.avatar_name}</span>
+                              </div>
+                              {av.id === selectedAvatarId && (
+                                <CheckCircle2 className="absolute top-0.5 right-0.5 h-3 w-3 text-primary drop-shadow" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Voice list */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-[10px] uppercase tracking-widest text-muted-foreground">Voice</label>
+                        {selectedVoiceId && (
+                          <button onClick={() => handleSelectVoice(null)}
+                            className="text-[10px] text-muted-foreground hover:text-foreground">Clear</button>
+                        )}
+                      </div>
+                      {voicesLoading ? (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Loading voices…
+                        </div>
+                      ) : voices.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No voices available</p>
+                      ) : (
+                        <div className="space-y-0.5 max-h-36 overflow-y-auto pr-0.5">
+                          {voices.map((v) => (
+                            <button
+                              key={v.voice_id}
+                              onClick={() => handleSelectVoice(v.voice_id === selectedVoiceId ? null : v.voice_id)}
+                              className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                                v.voice_id === selectedVoiceId
+                                  ? "bg-primary/15 text-primary"
+                                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                              }`}
+                            >
+                              <span className="flex-1 text-left truncate">{v.name}</span>
+                              {v.gender && (
+                                <span className="text-[9px] uppercase opacity-40 flex-shrink-0">
+                                  {v.gender.slice(0, 1)}
+                                </span>
+                              )}
+                              {v.preview_audio && (
+                                <a href={v.preview_audio} target="_blank" rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="Preview voice"
+                                  className="flex-shrink-0 text-muted-foreground hover:text-primary">
+                                  <Play className="h-3 w-3" />
+                                </a>
+                              )}
+                              {v.voice_id === selectedVoiceId && (
+                                <CheckCircle2 className="h-3 w-3 text-primary flex-shrink-0" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* HeyGen video result */}
             {heygenState === "done" && heygenVideoUrl && (

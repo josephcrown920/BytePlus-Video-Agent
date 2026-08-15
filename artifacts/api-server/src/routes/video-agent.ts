@@ -216,6 +216,94 @@ router.get("/heygen-available", (_req, res) => {
 });
 
 /**
+ * GET /api/video-agent/avatars
+ * Proxies HeyGen GET /v3/avatar-looks and returns the public looks list.
+ * Returns { avatars: [{ id, avatar_name, preview_image_url?, gender? }] }
+ */
+router.get("/avatars", async (req: Request, res: Response) => {
+  const userId = await requireAuth(req, res);
+  if (!userId) return;
+
+  const apiKey = getHeyGenApiKey();
+  if (!apiKey) {
+    res.status(503).json({ error: "HeyGen API key not configured" });
+    return;
+  }
+
+  try {
+    const r = await fetch(`${HEYGEN_BASE_URL}/v3/avatar-looks`, {
+      headers: heygenHeaders(apiKey),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) {
+      res.status(502).json({ error: `HeyGen returned ${r.status}` });
+      return;
+    }
+    const data = (await r.json()) as {
+      data?: {
+        avatar_looks?: Array<{
+          id: string;
+          avatar_name: string;
+          preview_image_url?: string;
+          gender?: string;
+        }>;
+      };
+    };
+    res.json({ avatars: data.data?.avatar_looks ?? [] });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to fetch avatars";
+    res.status(502).json({ error: msg });
+  }
+});
+
+/**
+ * GET /api/video-agent/voices
+ * Proxies HeyGen GET /v3/voices, filtered to English by default.
+ * Returns { voices: [{ voice_id, name, language?, gender?, preview_audio? }] }
+ */
+router.get("/voices", async (req: Request, res: Response) => {
+  const userId = await requireAuth(req, res);
+  if (!userId) return;
+
+  const apiKey = getHeyGenApiKey();
+  if (!apiKey) {
+    res.status(503).json({ error: "HeyGen API key not configured" });
+    return;
+  }
+
+  const language = typeof req.query.language === "string" ? req.query.language : "en";
+
+  try {
+    const r = await fetch(
+      `${HEYGEN_BASE_URL}/v3/voices?language=${encodeURIComponent(language)}`,
+      {
+        headers: heygenHeaders(apiKey),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!r.ok) {
+      res.status(502).json({ error: `HeyGen returned ${r.status}` });
+      return;
+    }
+    const data = (await r.json()) as {
+      data?: {
+        voices?: Array<{
+          voice_id: string;
+          name: string;
+          language?: string;
+          gender?: string;
+          preview_audio?: string;
+        }>;
+      };
+    };
+    res.json({ voices: data.data?.voices ?? [] });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to fetch voices";
+    res.status(502).json({ error: msg });
+  }
+});
+
+/**
  * POST /api/video-agent/generate-video
  * Assembles the project's script into a single prompt and creates a HeyGen
  * Video Agent session (mode: generate). Returns { sessionId } immediately;
@@ -233,9 +321,11 @@ router.post("/generate-video", async (req: Request, res: Response) => {
     return;
   }
 
-  const { title, scenes } = req.body as {
+  const { title, scenes, avatarId, voiceId } = req.body as {
     title: string;
     scenes: Array<{ title: string; script: string; description: string; duration: number }>;
+    avatarId?: string;
+    voiceId?: string;
   };
 
   if (!Array.isArray(scenes) || scenes.length === 0) {
@@ -263,7 +353,12 @@ router.post("/generate-video", async (req: Request, res: Response) => {
     const createRes = await fetch(`${HEYGEN_BASE_URL}/v3/video-agents`, {
       method: "POST",
       headers: heygenHeaders(apiKey),
-      body: JSON.stringify({ mode: "generate", prompt }),
+      body: JSON.stringify({
+        mode: "generate",
+        prompt,
+        ...(avatarId ? { avatar_id: avatarId } : {}),
+        ...(voiceId  ? { voice_id:  voiceId  } : {}),
+      }),
       signal: AbortSignal.timeout(30_000),
     });
 
