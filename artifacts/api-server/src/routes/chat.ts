@@ -777,8 +777,13 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
           const validScenes = (scenes ?? []).slice(0, frameCount);
           if (validScenes.length === 0) return { error: "No scenes generated." };
 
-          // Step 2: Generate an image for each scene sequentially, reporting progress per frame
+          // Step 2: Generate an image for each scene sequentially, reporting progress per frame.
+          // Each fetch has a hard 55 s deadline via AbortSignal.timeout so a stalled request
+          // cannot block the pipeline indefinitely.
+          type FrameFailReason = "rate_limit" | "timeout" | "error";
           const imageBuffers: (Buffer | null)[] = [];
+          const frameFailReasons: FrameFailReason[] = [];
+
           for (let i = 0; i < validScenes.length; i++) {
             writeProgress(`Generating frame ${i + 1}/${validScenes.length}…`);
             try {
@@ -793,8 +798,10 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
                   prompt: validScenes[i].image_prompt,
                   size: "1536x1024",
                 }),
+                signal: AbortSignal.timeout(55_000),
               });
               if (!imgRes.ok) {
+                frameFailReasons.push(imgRes.status === 429 ? "rate_limit" : "error");
                 imageBuffers.push(null);
                 continue;
               }
@@ -802,14 +809,50 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
                 data?: { b64_json?: string }[];
               };
               const base64 = json.data?.[0]?.b64_json;
-              imageBuffers.push(base64 ? Buffer.from(base64, "base64") : null);
-            } catch {
+              const buf = base64 ? Buffer.from(base64, "base64") : null;
+              if (!buf) frameFailReasons.push("error");
+              imageBuffers.push(buf);
+            } catch (frameErr) {
+              const isTimeout =
+                frameErr instanceof Error &&
+                (frameErr.name === "TimeoutError" || frameErr.name === "AbortError");
+              frameFailReasons.push(isTimeout ? "timeout" : "error");
               imageBuffers.push(null);
             }
           }
 
           const validBuffers = imageBuffers.filter((b) => b !== null) as Buffer[];
-          if (validBuffers.length === 0) return { error: "Failed to generate any video frames." };
+          const failedCount = validScenes.length - validBuffers.length;
+          const rateLimitedCount = frameFailReasons.filter((r) => r === "rate_limit").length;
+          const timedOutCount = frameFailReasons.filter((r) => r === "timeout").length;
+
+          // Always require ≥2 valid frames — a 1-frame "video" is not useful
+          if (validBuffers.length < 2) {
+            if (rateLimitedCount > 0) {
+              return { error: "Image rate limit reached — try again in a moment." };
+            }
+            if (timedOutCount > 0) {
+              return { error: `Frame generation timed out (${timedOutCount} of ${validScenes.length} frames) — try again.` };
+            }
+            if (validBuffers.length === 0) {
+              return { error: "Failed to generate any video frames." };
+            }
+            return {
+              error: `Only ${validBuffers.length} of ${validScenes.length} frame${validScenes.length !== 1 ? "s" : ""} succeeded — try again for a better result.`,
+            };
+          }
+
+          // 2+ frames ready — if any frames failed for any reason, surface an explicit degradation note
+          if (failedCount > 0) {
+            const reasons: string[] = [];
+            if (rateLimitedCount > 0) reasons.push(`${rateLimitedCount} rate-limited`);
+            if (timedOutCount > 0) reasons.push(`${timedOutCount} timed out`);
+            const otherErrors = failedCount - rateLimitedCount - timedOutCount;
+            if (otherErrors > 0) reasons.push(`${otherErrors} failed`);
+            writeProgress(
+              `Rendering with ${validBuffers.length}/${validScenes.length} frames (${reasons.join(", ")})…`,
+            );
+          }
 
           writeProgress("Encoding video…");
 
@@ -874,25 +917,30 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
 
             const totalDuration = framePaths.length * frameDuration - fadeDuration;
 
-            await execFileAsync(
-              "ffmpeg",
-              [
-                ...inputs,
-                "-filter_complex",
-                filterComplex,
-                "-map",
-                mapArg,
-                "-c:v",
-                "libx264",
-                "-pix_fmt",
-                "yuv420p",
-                "-t",
-                String(totalDuration),
-                "-y",
-                outputPath,
-              ],
-              { timeout: 120_000 },
-            );
+            try {
+              await execFileAsync(
+                "ffmpeg",
+                [
+                  ...inputs,
+                  "-filter_complex",
+                  filterComplex,
+                  "-map",
+                  mapArg,
+                  "-c:v",
+                  "libx264",
+                  "-pix_fmt",
+                  "yuv420p",
+                  "-t",
+                  String(totalDuration),
+                  "-y",
+                  outputPath,
+                ],
+                { timeout: 120_000 },
+              );
+            } catch (ffmpegErr) {
+              const stderr = (ffmpegErr as { stderr?: string }).stderr?.slice(-800) ?? "";
+              return { error: `Video encoding failed.${stderr ? ` FFmpeg: ${stderr}` : ""}` };
+            }
 
             // Step 4 (optional): Synthesize voiceover and mux into the video
             let finalVideoPath = outputPath;
