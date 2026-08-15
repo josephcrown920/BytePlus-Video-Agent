@@ -34,13 +34,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load existing session
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    // Bound the initial session fetch to 10 s — if Supabase stalls the app
+    // must still escape the loading screen so the user can reach sign-in.
+    const sessionTimeout = new Promise<null>(resolve =>
+      setTimeout(() => resolve(null), 10_000),
+    );
+
+    Promise.race([
+      supabase.auth.getSession().then(({ data }) => data.session),
+      sessionTimeout,
+    ]).then(session => {
+      setSession(session);
+      setLoading(false);
+    }).catch(() => {
+      // Any unexpected rejection — clear loading so the user isn't stuck
       setLoading(false);
     });
 
-    // Listen for auth state changes
+    // Listen for auth state changes (covers sign-in, sign-out, token refresh)
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
       setLoading(false);

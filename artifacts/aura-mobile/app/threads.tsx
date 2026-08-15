@@ -6,6 +6,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -21,14 +22,25 @@ import { ThreadItem } from '@/components/ThreadItem';
 import { supabase } from '@/lib/supabase';
 import type { Thread } from '@/lib/supabase';
 
+const FETCH_TIMEOUT_MS = 15_000;
+
 async function fetchThreads(): Promise<Thread[]> {
-  const { data, error } = await supabase
-    .from('threads')
-    .select('id, title, updated_at, created_at, user_id')
-    .order('updated_at', { ascending: false })
-    .limit(100);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as Thread[];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    // .throwOnError() ensures aborts and Supabase errors both throw,
+    // so React Query sees a rejection and sets isError = true.
+    const { data } = await supabase
+      .from('threads')
+      .select('id, title, updated_at, created_at, user_id')
+      .abortSignal(controller.signal)
+      .order('updated_at', { ascending: false })
+      .limit(100)
+      .throwOnError();
+    return (data ?? []) as Thread[];
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export default function ThreadsScreen() {
@@ -39,30 +51,50 @@ export default function ThreadsScreen() {
   const queryClient = useQueryClient();
   const [creatingThread, setCreatingThread] = useState(false);
 
-  const { data: threads = [], isLoading, refetch } = useQuery<Thread[]>({
+  const [refreshing, setRefreshing] = useState(false);
+
+  const { data: threads = [], isLoading, isError, refetch } = useQuery<Thread[]>({
     queryKey: ['threads'],
     queryFn: fetchThreads,
+    // No retries — a 15-second stall should surface the error/retry UI immediately,
+    // not after three 15-second attempts (45 s+ total).
+    retry: false,
   });
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   const handleNewChat = useCallback(async () => {
     if (!user) return;
     setCreatingThread(true);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('threads')
         .insert({ user_id: user.id, title: 'New conversation' })
         .select('id')
-        .single();
-      if (error) throw new Error(error.message);
-      await queryClient.invalidateQueries({ queryKey: ['threads'] });
-      router.push(`/chat/${data.id}`);
-    } catch (e) {
-      Alert.alert('Error', 'Could not create a new conversation.');
+        .abortSignal(controller.signal)
+        .single()
+        .throwOnError();
+      // Navigate immediately — don't block on the list refetch.
+      // Invalidate in the background so the list is fresh when the user returns.
+      router.push(`/chat/${data!.id}`);
+      queryClient.invalidateQueries({ queryKey: ['threads'] }).catch(() => {});
+    } catch {
+      Alert.alert('Error', 'Could not create a new conversation. Check your connection and try again.');
     } finally {
+      clearTimeout(timer);
       setCreatingThread(false);
     }
-  }, [user]);
+  }, [user, queryClient, router]);
 
   const handleDeleteThread = useCallback((threadId: string) => {
     Alert.alert('Delete conversation', 'Are you sure you want to delete this conversation?', [
@@ -71,18 +103,27 @@ export default function ThreadsScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
           try {
-            await supabase.from('threads').delete().eq('id', threadId);
+            await supabase
+              .from('threads')
+              .delete()
+              .eq('id', threadId)
+              .abortSignal(controller.signal)
+              .throwOnError();
             queryClient.setQueryData<Thread[]>(['threads'], prev =>
               prev ? prev.filter(t => t.id !== threadId) : [],
             );
           } catch {
-            Alert.alert('Error', 'Could not delete the conversation.');
+            Alert.alert('Error', 'Could not delete the conversation. Check your connection and try again.');
+          } finally {
+            clearTimeout(timer);
           }
         },
       },
     ]);
-  }, []);
+  }, [queryClient]);
 
   const handleSignOut = useCallback(() => {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
@@ -147,6 +188,43 @@ export default function ThreadsScreen() {
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
+      ) : isError ? (
+        <ScrollView
+          contentContainerStyle={styles.center}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+        >
+          <View
+            style={[
+              styles.emptyIcon,
+              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+            ]}
+          >
+            <Feather name="wifi-off" size={28} color={colors.mutedForeground} />
+          </View>
+          <Text
+            style={[
+              styles.emptyTitle,
+              { color: colors.foreground, fontFamily: 'Inter_600SemiBold' },
+            ]}
+          >
+            Couldn't load conversations
+          </Text>
+          <Text
+            style={[
+              styles.emptySubtitle,
+              { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' },
+            ]}
+          >
+            Pull down to retry
+          </Text>
+        </ScrollView>
       ) : threads.length === 0 ? (
         <View style={styles.center}>
           <View
@@ -187,8 +265,8 @@ export default function ThreadsScreen() {
           )}
           refreshControl={
             <RefreshControl
-              refreshing={false}
-              onRefresh={refetch}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
               tintColor={colors.primary}
               colors={[colors.primary]}
             />
