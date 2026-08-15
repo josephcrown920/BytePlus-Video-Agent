@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
+
+// Ensure the auth session is completed when the browser redirects back
+WebBrowser.maybeCompleteAuthSession();
 
 type AuthContextType = {
   session: Session | null;
@@ -8,6 +13,7 @@ type AuthContextType = {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   getToken: () => Promise<string | null>;
 };
@@ -18,6 +24,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signIn: async () => {},
   signUp: async () => {},
+  signInWithGoogle: async () => {},
   signOut: async () => {},
   getToken: async () => null,
 });
@@ -56,6 +63,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw error;
   };
 
+  const signInWithGoogle = async () => {
+    // Build a deep-link URL the OS will hand back to this app after OAuth completes
+    const redirectUrl = Linking.createURL('/');
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true,
+      },
+    });
+
+    if (error) throw error;
+    if (!data.url) throw new Error('No OAuth URL returned from Supabase');
+
+    // Open the Google consent page in an in-app browser session
+    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
+    if (result.type === 'success') {
+      // Exchange the PKCE code in the redirect URL for a Supabase session
+      const { error: sessionError } = await supabase.auth.exchangeCodeForSession(result.url);
+      if (sessionError) throw sessionError;
+      // onAuthStateChange listener above will update session state automatically
+    }
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
   };
@@ -73,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         signIn,
         signUp,
+        signInWithGoogle,
         signOut,
         getToken,
       }}

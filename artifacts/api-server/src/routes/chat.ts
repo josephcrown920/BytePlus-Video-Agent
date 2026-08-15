@@ -121,6 +121,7 @@ You have real tools. Use them proactively instead of guessing:
 - web_search + fetch_url for anything current, factual, or link-based. Always cite sources as markdown links.
 - generate_image whenever a visual is requested. After it returns, embed the image with markdown: ![alt](imageUrl).
 - generate_video whenever someone asks for a video clip, reel, animation or moving visual. After it returns, embed with HTML: <video src="videoUrl" controls autoplay loop muted style="max-width:100%;border-radius:12px"></video>. When the user asks for an ad, reel, or any video with narration, always include a voiceover_text with the script dialogue — never leave it empty for ads.
+- previs to create a full interactive pre-visualization animatic: script → per-scene images → timed MP4 the user can scrub through. Use whenever someone asks for a previs, animatic, shot preview, visual development, or to "see what the video will look like". After it returns, embed the video the same way as generate_video; the UI will automatically show the interactive scene strip.
 - generate_script to produce a structured video/ad/reel script with scenes and dialogue.
 - generate_captions to craft platform-optimised social captions for TikTok, Instagram and LinkedIn.
 - storyboard to break a concept into numbered visual scenes, each with a reference image.
@@ -303,6 +304,22 @@ router.post("/", async (req: Request, res: Response) => {
   // Shared writer — set synchronously inside createUIMessageStream.execute (before any tool runs)
   // eslint-disable-next-line prefer-const
   let videoProgressWriter: { write: (part: unknown) => void } | undefined;
+
+  /** Emit a transient progress label into the UI stream badge. Safe to call from any tool. */
+  const writeProgress = (label: string) => {
+    try {
+      videoProgressWriter?.write({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        type: "data-video_progress" as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: { label } as any,
+        transient: true,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+    } catch {
+      /* stream may already be closed */
+    }
+  };
 
   const tools = {
     web_search: tool({
@@ -723,22 +740,6 @@ Return ONLY valid JSON (no markdown fences):
           const styleHint = style ? ` Visual style: ${style}.` : "";
           const frameCount = 3;
 
-          // Helper to emit live progress into the stream badge
-          const writeProgress = (label: string) => {
-            try {
-              videoProgressWriter?.write({
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                type: "data-video_progress" as any,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                data: { label } as any,
-                transient: true,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              } as any);
-            } catch {
-              /* stream may already be closed */
-            }
-          };
-
           // Step 1: Generate distinct cinematic scene prompts with GPT
           writeProgress("Planning video scenes…");
           const planRes = await fetch(`${openaiBaseUrl}/chat/completions`, {
@@ -1051,6 +1052,233 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
           }
         } catch (err) {
           return { error: `Video generation failed: ${(err as Error).message}` };
+        }
+      },
+    }),
+
+    previs: tool({
+      description:
+        "Create a full interactive pre-visualization (animatic) from a concept or brief. Generates a Cinematic Viralist script with per-scene durations, produces a reference image for each scene, then renders them into a timed animatic MP4. Returns a playable videoUrl plus a scenes array with imageUrl and startTime for each scene — the UI shows an interactive scene strip so users can scrub to any shot. Use whenever someone asks for a previs, animatic, shot-by-shot preview, visual development, or to see what a video will look like.",
+      inputSchema: z.object({
+        topic: z.string().describe("The concept, story, campaign, or brief to pre-visualize"),
+        format: z
+          .enum(["video", "ad", "reel"])
+          .optional()
+          .describe("Target format: video (long-form), ad (30-60s), reel (15-30s). Defaults to reel."),
+      }),
+      execute: async ({ topic, format = "reel" }) => {
+        try {
+          // ── Step 1: Generate structured script ────────────────────────────
+          writeProgress("Developing script…");
+          const scriptPrompt = `Write a ${format} script about: "${topic}".
+
+## CINEMATIC VIRALIST BLUEPRINT (mandatory)
+STEP 1 — SENSORY HOOK (0-3 s): Scene 1 must be a visceral sensory shock that stops the scroll. No logos, title cards, or introductions.
+STEP 2 — NARRATIVE MID-ROLL: Middle scenes build tension and meaning. Each must earn its place.
+STEP 3 — AESTHETIC CLOSE: End on an image or line that creates desire to loop or share.
+
+Return ONLY valid JSON (no markdown fences):
+{
+  "title": "string",
+  "scenes": [
+    {
+      "scene": 1,
+      "description": "what the viewer sees — composition, lighting, action, mood",
+      "image_prompt": "detailed cinematic image generation prompt for this exact scene",
+      "dialogue": "voiceover or spoken words (empty string if none)",
+      "duration_seconds": number
+    }
+  ]
+}
+Use 3-5 scenes. Be vivid and specific. Assign realistic durations (2-6 s each for reels, 3-8 s each for ads/videos).`;
+
+          const scriptRes = await fetch(`${openaiBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              Authorization: `Bearer ${openaiApiKey}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: scriptPrompt }],
+              response_format: { type: "json_object" },
+              temperature: 0.8,
+            }),
+          });
+
+          if (!scriptRes.ok) {
+            return { error: `Script generation failed (${scriptRes.status})` };
+          }
+          const scriptJson = (await scriptRes.json()) as {
+            choices?: { message?: { content?: string } }[];
+          };
+          const scriptContent = scriptJson.choices?.[0]?.message?.content;
+          if (!scriptContent) return { error: "No script returned from model." };
+
+          const script = JSON.parse(scriptContent) as {
+            title: string;
+            scenes: {
+              scene: number;
+              description: string;
+              image_prompt: string;
+              dialogue: string;
+              duration_seconds: number;
+            }[];
+          };
+
+          const sceneCount = script.scenes?.length ?? 0;
+          if (sceneCount === 0) return { error: "Script has no scenes." };
+
+          // ── Step 2: Generate one image per scene in parallel ──────────────
+          writeProgress(`Generating ${sceneCount} scene images…`);
+          const scenesWithImages = await Promise.all(
+            script.scenes.map(async (scene, i) => {
+              const imageUrl = await generateSceneImage(
+                scene.image_prompt,
+                userId,
+                openaiBaseUrl,
+                openaiApiKey,
+                supabase,
+                scene.scene,
+                /* maxAttempts */ 2,
+                /* backoffMs */ 1000,
+              );
+              writeProgress(`Scene ${i + 1}/${sceneCount} ready…`);
+              return { ...scene, imageUrl };
+            }),
+          );
+
+          // ── Step 3: Compute cumulative start times ────────────────────────
+          let elapsed = 0;
+          const timedScenes = scenesWithImages.map((scene) => {
+            const startTime = elapsed;
+            elapsed += Math.max(2, scene.duration_seconds ?? 3);
+            return { ...scene, startTime };
+          });
+
+          // ── Step 4: Render animatic with FFmpeg ───────────────────────────
+          writeProgress("Compositing animatic…");
+          const validScenes = timedScenes.filter((s) => s.imageUrl !== null);
+          if (validScenes.length < 2) {
+            return { error: "Not enough scene images to render previs — try again." };
+          }
+
+          const fsp = await import("fs/promises");
+          const { execFile } = await import("child_process");
+          const { promisify } = await import("util");
+          const { tmpdir } = await import("os");
+          const pathMod = await import("path");
+          const execFileAsync = promisify(execFile);
+
+          const tmpDir = await fsp.mkdtemp(pathMod.join(tmpdir(), "aura-previs-"));
+          const outputPath = pathMod.join(tmpDir, "previs.mp4");
+
+          try {
+            // Download each signed image URL to disk
+            const framePaths: string[] = [];
+            for (let i = 0; i < validScenes.length; i++) {
+              const imgUrl = validScenes[i].imageUrl!;
+              const imgRes = await fetch(imgUrl, { signal: AbortSignal.timeout(30_000) });
+              if (!imgRes.ok) continue;
+              const buf = Buffer.from(await imgRes.arrayBuffer());
+              const p = pathMod.join(tmpDir, `scene${i}.jpg`);
+              await fsp.writeFile(p, buf);
+              framePaths.push(p);
+            }
+
+            if (framePaths.length < 2) {
+              return { error: "Could not download enough scene images to render previs." };
+            }
+
+            const fadeDuration = 0.4;
+            const durations = framePaths.map((_, i) =>
+              Math.max(2, validScenes[i]?.duration_seconds ?? 3),
+            );
+
+            // Each input loops for scene duration + fade so xfade has overlap material
+            const inputs = framePaths.flatMap((p, i) => [
+              "-loop", "1",
+              "-t", String(durations[i] + fadeDuration),
+              "-i", p,
+            ]);
+
+            // Scale every frame to 1280×720 with letterboxing
+            const scaleFilters = framePaths.map(
+              (_, i) =>
+                `[${i}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}]`,
+            );
+
+            let filterComplex: string;
+            let mapArg: string;
+
+            if (framePaths.length === 1) {
+              filterComplex = scaleFilters[0];
+              mapArg = "[v0]";
+            } else {
+              const xfadeFilters: string[] = [];
+              let prev = "v0";
+              let cumulativeOffset = 0;
+              for (let i = 1; i < framePaths.length; i++) {
+                cumulativeOffset += durations[i - 1];
+                const offset = cumulativeOffset - fadeDuration;
+                const out = i === framePaths.length - 1 ? "out" : `xf${i}`;
+                xfadeFilters.push(
+                  `[${prev}][v${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${Math.max(0, offset)}[${out}]`,
+                );
+                prev = out;
+              }
+              filterComplex = [...scaleFilters, ...xfadeFilters].join(";");
+              mapArg = "[out]";
+            }
+
+            const totalDuration = durations.reduce((a, b) => a + b, 0) - fadeDuration;
+
+            try {
+              await execFileAsync(
+                "ffmpeg",
+                [
+                  ...inputs,
+                  "-filter_complex", filterComplex,
+                  "-map", mapArg,
+                  "-c:v", "libx264",
+                  "-pix_fmt", "yuv420p",
+                  "-t", String(Math.max(1, totalDuration)),
+                  "-y", outputPath,
+                ],
+                { timeout: 180_000 },
+              );
+            } catch (ffErr) {
+              const stderr = (ffErr as { stderr?: string }).stderr?.slice(-600) ?? "";
+              return { error: `Animatic encoding failed.${stderr ? ` FFmpeg: ${stderr}` : ""}` };
+            }
+
+            // ── Step 5: Upload and sign ───────────────────────────────────
+            writeProgress("Uploading previs…");
+            const videoBuffer = await fsp.readFile(outputPath);
+            const storagePath = `${userId}/${Date.now()}-previs-${Math.random().toString(36).slice(2, 6)}.mp4`;
+
+            const { error: uploadError } = await supabase.storage
+              .from("artifacts")
+              .upload(storagePath, videoBuffer, { contentType: "video/mp4" });
+            if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
+
+            const { data: signed, error: signError } = await supabase.storage
+              .from("artifacts")
+              .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+            if (signError || !signed?.signedUrl) {
+              return { error: `Could not create previs URL: ${signError?.message ?? "unknown"}` };
+            }
+
+            return {
+              title: script.title,
+              videoUrl: signed.signedUrl,
+              scenes: timedScenes,
+            };
+          } finally {
+            await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+          }
+        } catch (err) {
+          return { error: `Previs failed: ${(err as Error).message}` };
         }
       },
     }),

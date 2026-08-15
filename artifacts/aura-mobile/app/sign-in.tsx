@@ -19,7 +19,7 @@ import { useAuth } from '@/context/AuthContext';
 
 export default function SignInScreen() {
   const colors = useColors();
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, signInWithGoogle } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -28,7 +28,21 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+      router.replace('/threads');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Google sign-in failed.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setError(null);
@@ -107,6 +121,40 @@ export default function SignInScreen() {
           <Text style={[styles.tagline, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
             {mode === 'signIn' ? 'Sign in to continue' : 'Create your account'}
           </Text>
+
+          {/* Google sign-in */}
+          <Pressable
+            onPress={handleGoogleSignIn}
+            disabled={googleLoading || loading}
+            style={({ pressed }) => [
+              styles.googleBtn,
+              { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed || googleLoading ? 0.8 : 1 },
+            ]}
+            testID="google-sign-in-button"
+          >
+            {googleLoading ? (
+              <ActivityIndicator color={colors.foreground} size="small" />
+            ) : (
+              <>
+                {/* Google "G" logo mark */}
+                <View style={styles.googleLogo}>
+                  <Text style={styles.googleLogoText}>G</Text>
+                </View>
+                <Text style={[styles.googleBtnText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>
+                  Continue with Google
+                </Text>
+              </>
+            )}
+          </Pressable>
+
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <Text style={[styles.dividerText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
+              or
+            </Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          </View>
 
           {/* Form */}
           <View style={[styles.form, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -283,5 +331,47 @@ const styles = StyleSheet.create({
   },
   toggleText: {
     fontSize: 14,
+  },
+  googleBtn: {
+    width: '100%',
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
+  googleLogo: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleLogoText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4285F4',
+    lineHeight: 16,
+  },
+  googleBtnText: {
+    fontSize: 16,
+  },
+  divider: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 13,
   },
 });
