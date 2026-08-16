@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 import { isWeakHook } from "../lib/hook-quality.js";
+import { runBrains, selectWinner, type BrainCandidate, type JudgeVerdict } from "../lib/aurora-brain.js";
 
 const router = Router();
 
@@ -217,6 +218,92 @@ Replace Scene 0 with a concrete, sensory, action-first image: a close-up, an une
     res.status(502).json({ error: msg });
   }
 });
+
+// POST /api/video-agent/brain-script — Aurora Brain co-creative content planner.
+// Runs several LLM "brains" in parallel on the same brief, a judge picks the
+// strongest plan, and the winner still passes the hook-quality guard.
+router.post("/brain-script", async (req: Request, res: Response) => {
+  const userId = await requireAuth(req, res);
+  if (!userId) return;
+
+  const { prompt, style, targetDuration } = req.body as {
+    prompt: string;
+    style?: string;
+    targetDuration?: number;
+  };
+
+  if (!prompt || typeof prompt !== "string") {
+    res.status(400).json({ error: "Missing prompt" });
+    return;
+  }
+
+  const sceneCount = Math.max(4, Math.round((targetDuration ?? 60) / 15));
+  const userMessage = `Video topic: ${prompt}
+Visual style: ${style ?? "cinematic"}
+Target duration: ${targetDuration ?? 60} seconds
+Number of scenes: ${sceneCount}
+
+Generate a complete professional video script with cinematic scene descriptions.`;
+
+  try {
+    // ── 1. Run every brain in parallel ─────────────────────────────────────
+    const candidates: BrainCandidate[] = await runBrains({
+      system: SCRIPT_SYSTEM,
+      prompt: userMessage,
+      schema: ScriptSchema,
+    });
+
+    // ── 2. Judge picks the winner ──────────────────────────────────────────
+    const { verdict, winner } = await selectWinner({
+      brief: `Topic: ${prompt}\nStyle: ${style ?? "cinematic"}\nTarget: ${targetDuration ?? 60}s`,
+      system: SCRIPT_SYSTEM,
+      candidates,
+    });
+
+    // ── 3. Hook-quality guard on the winner ────────────────────────────────
+    const winRec = winner.object as {
+      title: string;
+      hook?: string;
+      scenes: Array<{ index: number; title: string; script: string; description: string; duration: number }>;
+      close?: string;
+      mood?: string;
+    };
+
+    const scene0 = winRec.scenes?.[0];
+    const hookWeak = isWeakHook(scene0?.description ?? "", winRec.hook ?? "");
+
+    // ── 4. Build the report the UI can render ──────────────────────────────
+    const report = {
+      ...verdict,
+      winnerLabel: winner.brain.label,
+      candidates: verdict.scores.map((s) => ({
+        id: s.brainId,
+        label: availableLabel(s.brainId),
+        score: Math.round(s.total * 10) / 10,
+      })),
+    };
+
+    res.json({
+      ...winRec,
+      hookWarning: hookWeak || undefined,
+      brain: report,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Aurora Brain failed";
+    console.error("brain-script error:", msg);
+    res.status(502).json({ error: msg });
+  }
+});
+
+function availableLabel(id: string): string {
+  const m: Record<string, string> = {
+    "gemini-pro": "Gemini 3.1 Pro",
+    gpt: "GPT-5 Terra",
+    claude: "Claude Sonnet 4.6",
+    "gemini-flash": "Gemini Flash",
+  };
+  return m[id] ?? id;
+}
 
 // POST /api/video-agent/generate-frame — uses Pollinations.ai (free, no key needed)
 router.post("/generate-frame", async (req: Request, res: Response) => {

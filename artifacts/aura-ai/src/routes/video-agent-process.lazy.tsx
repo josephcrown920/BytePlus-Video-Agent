@@ -31,6 +31,11 @@ type ScriptData = {
   title: string;
   scenes: Array<{ index: number; title: string; script: string; description: string; duration: number }>;
   hookWarning?: boolean;
+  brain?: {
+    winnerLabel: string;
+    rationale?: string;
+    candidates: Array<{ id: string; label: string; score: number }>;
+  };
 };
 
 const INITIAL_STEPS: Step[] = [
@@ -229,11 +234,11 @@ function AgentProcessing() {
     authHeadersRef.current = authHeaders;
 
     try {
-      // ── Step 1: Generate Script ──
+      // ── Step 1: Generate Script (Aurora Brain — N models compete, judge picks) ──
       setStep("script", "running");
-      addLog(`Starting script for: "${project.prompt.slice(0, 60)}…"`);
+      addLog(`Aurora Brain composing script for: "${project.prompt.slice(0, 60)}…"`);
 
-      const scriptRes = await fetch("/api/video-agent/generate-script", {
+      const scriptRes = await fetch("/api/video-agent/brain-script", {
         method: "POST",
         headers: authHeaders,
         body: JSON.stringify({
@@ -252,17 +257,26 @@ function AgentProcessing() {
       const scriptData = (await scriptRes.json()) as ScriptData;
       const title = scriptData.title ?? "Untitled Video";
 
+      // Report the brain contest to the log
+      const brain = scriptData.brain;
+      if (brain?.winnerLabel && Array.isArray(brain.candidates)) {
+        const ranked = [...brain.candidates].sort((a, b) => b.score - a.score);
+        addLog(`  🧠 ${brain.winnerLabel} won (${Math.round(brain.candidates[0]?.score ?? 0)}/10)`);
+        for (const c of ranked) {
+          addLog(`    · ${c.label}: ${c.score}/10`);
+        }
+        setStep("script", "done", `${scriptData.scenes.length} scenes · ${brain.winnerLabel}`);
+      } else {
+        addLog(`✓ Script ready: "${title}" — ${scriptData.scenes.length} scenes`);
+        setStep("script", "done", `${scriptData.scenes.length} scenes`);
+      }
+
       if (scriptData.hookWarning) {
-        // Both the first attempt and the correction retry produced a weak hook.
-        // Pause the pipeline so the user can decide before committing visuals/voiceover.
+        // The winning brain's hook flag was raised — pause so the user can decide.
         addLog(`⚠ Scene 0 may not be a genuine sensory hook — paused for review`);
-        setStep("script", "done", `${scriptData.scenes.length} scenes (hook warning)`);
         setHookWarningScript(scriptData);
         return; // pipeline halted — user must choose via the warning UI
       }
-
-      addLog(`✓ Script ready: "${title}" — ${scriptData.scenes.length} scenes`);
-      setStep("script", "done", `${scriptData.scenes.length} scenes`);
 
       await continueFromScript(scriptData, authHeaders);
 

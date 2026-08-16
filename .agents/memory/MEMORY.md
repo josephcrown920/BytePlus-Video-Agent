@@ -1,3 +1,4 @@
 - [Aura Mobile architecture](aura-mobile-arch.md) — Expo app with Supabase auth + direct DB queries + Vercel AI SDK stream parsing for /api/chat
 - [HeyGen API](heygen-api.md) — auth ladder (API key > OAuth), key endpoints, video agent, avatars, lipsync, translation, batching, MCP
 - [Cinematic Viralist & Video Agent Architecture](cinematic-viralist.md) — 3-step hook/narrative/close for video scripting; Thought-Action-Observation loop + 3-layer tool suite for agent design
+- [Aurora Brain multi-model planner](aurora-brain.md) — N LLM "brains" compete on a brief, judge picks the best; reuse lib/aurora-brain.ts for any content-selection surface
