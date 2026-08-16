@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import { Download, Film, ImageOff, Loader2, RefreshCw } from "lucide-react";
+import { useState, useCallback, useRef } from "react";
+import { Download, Film, ImageOff, Loader2, Pencil, RefreshCw, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadStoryboardPdf, type StoryboardData } from "@/lib/export";
 import { cinematicSceneRole, CINEMATIC_ROLE_STYLES } from "@/lib/video-agent-skills";
@@ -24,96 +24,186 @@ type SceneImageState =
   | { status: "error" }
   | { status: "retrying" };
 
+async function generateImage(prompt: string): Promise<string | null> {
+  const { data: session } = await supabase.auth.getSession();
+  const token = session?.session?.access_token;
+  if (!token) return null;
+
+  const res = await fetch("/api/images/generate", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!res.ok) return null;
+  const json = (await res.json()) as { imageUrl?: string };
+  return json.imageUrl ?? null;
+}
+
 function SceneFrame({ scene }: { scene: Scene }) {
   const [imgState, setImgState] = useState<SceneImageState>(
     scene.imageUrl ? { status: "loading" } : { status: "error" },
   );
   const [currentUrl, setCurrentUrl] = useState<string | null>(scene.imageUrl);
+  const [hovered, setHovered] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editPrompt, setEditPrompt] = useState(scene.image_prompt);
+  const [editLoading, setEditLoading] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const retry = useCallback(async () => {
     setImgState({ status: "retrying" });
     try {
-      const { data: session } = await supabase.auth.getSession();
-      const token = session?.session?.access_token;
-      if (!token) { setImgState({ status: "error" }); return; }
-
-      const res = await fetch("/api/images/generate", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ prompt: scene.image_prompt }),
-      });
-
-      if (!res.ok) { setImgState({ status: "error" }); return; }
-      const json = (await res.json()) as { imageUrl?: string };
-      if (!json.imageUrl) { setImgState({ status: "error" }); return; }
-
-      setCurrentUrl(json.imageUrl);
+      const url = await generateImage(scene.image_prompt);
+      if (!url) { setImgState({ status: "error" }); return; }
+      setCurrentUrl(url);
       setImgState({ status: "loading" });
     } catch {
       setImgState({ status: "error" });
     }
   }, [scene.image_prompt]);
 
+  const openEdit = useCallback(() => {
+    setEditPrompt(scene.image_prompt);
+    setEditOpen(true);
+    // focus textarea after render
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  }, [scene.image_prompt]);
+
+  const cancelEdit = useCallback(() => {
+    setEditOpen(false);
+  }, []);
+
+  const submitEdit = useCallback(async () => {
+    const trimmed = editPrompt.trim();
+    if (!trimmed) return;
+    setEditLoading(true);
+    setEditOpen(false);
+    setImgState({ status: "retrying" });
+    try {
+      const url = await generateImage(trimmed);
+      if (!url) { setImgState({ status: "error" }); return; }
+      setCurrentUrl(url);
+      setImgState({ status: "loading" });
+    } catch {
+      setImgState({ status: "error" });
+    } finally {
+      setEditLoading(false);
+    }
+  }, [editPrompt]);
+
   const isRetrying = imgState.status === "retrying";
   const isError = imgState.status === "error";
   const isLoaded = imgState.status === "loaded";
 
   return (
-    <div
-      className="relative overflow-hidden rounded-xl border border-white/10 bg-surface-elevated"
-      style={{ width: 120, height: 120 }}
-    >
-      {/* Skeleton — shown while loading */}
-      {imgState.status === "loading" && (
-        <div className="absolute inset-0 animate-pulse bg-white/5" />
-      )}
+    <div className="flex flex-col gap-1">
+      <div
+        className="relative overflow-hidden rounded-xl border border-white/10 bg-surface-elevated"
+        style={{ width: 120, height: 120 }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {/* Skeleton — shown while loading */}
+        {imgState.status === "loading" && (
+          <div className="absolute inset-0 animate-pulse bg-white/5" />
+        )}
 
-      {/* Actual image */}
-      {currentUrl && (
-        <img
-          key={currentUrl}
-          src={currentUrl}
-          alt={scene.title}
-          loading="lazy"
-          className={`size-full object-cover transition-opacity duration-300 ${isLoaded ? "opacity-100" : "opacity-0"}`}
-          onLoad={() => setImgState({ status: "loaded" })}
-          onError={() => setImgState({ status: "error" })}
-        />
-      )}
+        {/* Actual image */}
+        {currentUrl && (
+          <img
+            key={currentUrl}
+            src={currentUrl}
+            alt={scene.title}
+            loading="lazy"
+            className={`size-full object-cover transition-opacity duration-300 ${isLoaded ? "opacity-100" : "opacity-0"}`}
+            onLoad={() => setImgState({ status: "loaded" })}
+            onError={() => setImgState({ status: "error" })}
+          />
+        )}
 
-      {/* Error / retry state */}
-      {isError && (
-        <button
-          type="button"
-          onClick={retry}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-surface-elevated/90 text-center transition-colors hover:bg-surface-elevated"
-        >
-          <ImageOff className="size-4 text-muted-foreground/50" />
-          <span className="px-2 text-[9px] leading-tight text-muted-foreground">
-            Image unavailable
-          </span>
-          <span className="flex items-center gap-0.5 text-[9px] font-medium text-primary">
-            <RefreshCw className="size-2.5" />
-            Tap to retry
-          </span>
-        </button>
-      )}
+        {/* Error / retry state */}
+        {isError && (
+          <button
+            type="button"
+            onClick={retry}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-surface-elevated/90 text-center transition-colors hover:bg-surface-elevated"
+          >
+            <ImageOff className="size-4 text-muted-foreground/50" />
+            <span className="px-2 text-[9px] leading-tight text-muted-foreground">
+              Image unavailable
+            </span>
+            <span className="flex items-center gap-0.5 text-[9px] font-medium text-primary">
+              <RefreshCw className="size-2.5" />
+              Tap to retry
+            </span>
+          </button>
+        )}
 
-      {/* Retrying spinner */}
-      {isRetrying && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-surface-elevated/90">
-          <RefreshCw className="size-4 animate-spin text-primary/60" />
-          <span className="text-[9px] text-muted-foreground">Retrying…</span>
+        {/* Retrying spinner */}
+        {(isRetrying || editLoading) && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-surface-elevated/90">
+            <RefreshCw className="size-4 animate-spin text-primary/60" />
+            <span className="text-[9px] text-muted-foreground">Generating…</span>
+          </div>
+        )}
+
+        {/* Edit button — shown on hover when image is loaded */}
+        {isLoaded && hovered && !editLoading && (
+          <button
+            type="button"
+            onClick={openEdit}
+            title="Edit image prompt"
+            className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md bg-black/60 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
+          >
+            <Pencil className="size-3" />
+          </button>
+        )}
+
+        {/* Frame label overlay */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
+          <span className="text-[10px] font-bold text-white/90">Frame {scene.scene}</span>
+        </div>
+      </div>
+
+      {/* Inline prompt editor */}
+      {editOpen && (
+        <div className="w-[120px] rounded-lg border border-white/15 bg-surface-elevated p-2 shadow-lg">
+          <textarea
+            ref={textareaRef}
+            value={editPrompt}
+            onChange={(e) => setEditPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void submitEdit(); }
+              if (e.key === "Escape") cancelEdit();
+            }}
+            rows={4}
+            className="w-full resize-none rounded-md bg-black/20 px-1.5 py-1 text-[9px] leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+            placeholder="Describe this frame…"
+          />
+          <div className="mt-1.5 flex gap-1">
+            <button
+              type="button"
+              onClick={() => void submitEdit()}
+              disabled={!editPrompt.trim()}
+              className="flex flex-1 items-center justify-center gap-1 rounded-md bg-primary/80 py-1 text-[9px] font-medium text-white transition-colors hover:bg-primary disabled:opacity-40"
+            >
+              <RefreshCw className="size-2.5" />
+              Regen
+            </button>
+            <button
+              type="button"
+              onClick={cancelEdit}
+              className="flex size-[22px] items-center justify-center rounded-md border border-white/10 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <X className="size-2.5" />
+            </button>
+          </div>
         </div>
       )}
-
-      {/* Frame label overlay */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
-        <span className="text-[10px] font-bold text-white/90">Frame {scene.scene}</span>
-      </div>
     </div>
   );
 }
