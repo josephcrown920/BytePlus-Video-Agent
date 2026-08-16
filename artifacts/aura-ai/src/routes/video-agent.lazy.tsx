@@ -12,8 +12,10 @@ import {
   Loader2,
   Mic,
   Paperclip,
+  Play,
   Plus,
   Sparkles,
+  Wand2,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -81,6 +83,7 @@ function VideoAgentHome() {
         updatedAt: Date.now(),
         exportUrl: null,
         thumbnailUrl: null,
+        previsUrl: null,
       });
       await navigate({ to: "/video-agent-process", search: { id } });
     } catch (err) {
@@ -118,29 +121,64 @@ function VideoAgentHome() {
 
         <section className="video-agent-slot-grid" aria-label="Video agent modes">
           <div className="video-agent-slot" data-video-agent-slot="mode-one">
-            <span>Placeholder for your first mode card</span>
+            <div className="video-agent-slot-icon"><Wand2 className="size-4" /></div>
+            <div className="video-agent-slot-title">Script to storyboard</div>
+            <p className="video-agent-slot-desc">Paste a topic and get a full script, per-scene visuals and a timed previs animatic.</p>
+            <button type="button" className="video-agent-slot-cta" onClick={() => document.querySelector<HTMLTextAreaElement>(".video-agent-composer-input")?.focus()}>Start scripting</button>
           </div>
           <div className="video-agent-slot" data-video-agent-slot="mode-two">
-            <span>Placeholder for your second mode card</span>
+            <div className="video-agent-slot-icon"><Sparkles className="size-4" /></div>
+            <div className="video-agent-slot-title">Avatar video</div>
+            <p className="video-agent-slot-desc">Export a narrated video with a chosen HeyGen avatar and voice.</p>
+            <button type="button" className="video-agent-slot-cta" onClick={() => document.querySelector<HTMLTextAreaElement>(".video-agent-composer-input")?.focus()}>Generate with avatar</button>
           </div>
         </section>
 
         <section className="video-agent-drafts-section" aria-labelledby="latest-drafts-heading">
           <div className="video-agent-section-heading">
             <h2 id="latest-drafts-heading">Latest drafts</h2>
-            <span>View all</span>
+            {recent.length > 0 && (
+              <span className="cursor-pointer" onClick={() => setRecent(videoAgentStore.list().slice(0, 4))}>View all</span>
+            )}
           </div>
           <div className="video-agent-drafts-layout">
-            <div className="video-agent-draft-slot" data-video-agent-slot="latest-draft">
-              <span>Placeholder for your latest draft</span>
-            </div>
+            {recent[0] ? (
+              <Link to="/video-agent-edit" search={{ id: recent[0].id }} className="video-agent-draft-link">
+                <div className="video-agent-draft-slot" data-video-agent-slot="latest-draft">
+                  <div className="video-agent-draft-cover">
+                    {recent[0].thumbnailUrl ? (
+                      <img src={recent[0].thumbnailUrl} alt={recent[0].title} />
+                    ) : (
+                      <Film className="size-6 opacity-30" />
+                    )}
+                    {recent[0].previsUrl && (
+                      <span className="video-agent-draft-badge"><Play className="size-3" /> Previs</span>
+                    )}
+                  </div>
+                  <div className="video-agent-draft-meta">
+                    <div className="video-agent-draft-title">{recent[0].title}</div>
+                    <div className="video-agent-draft-sub">
+                      {recent[0].scenes.length} scenes · {recent[0].targetDuration}s
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            ) : (
+              <div className="video-agent-draft-slot" data-video-agent-slot="latest-draft">
+                <span className="text-xs text-muted-foreground">No drafts yet — describe a video above</span>
+              </div>
+            )}
             <div className="video-agent-project-slots">
-              <div className="video-agent-project-slot" data-video-agent-slot="recent-project-one">
-                <span>Recent project placeholder</span>
-              </div>
-              <div className="video-agent-project-slot" data-video-agent-slot="recent-project-two">
-                <span>Recent project placeholder</span>
-              </div>
+              {recent.slice(1, 3).map((p) => (
+                <Link key={p.id} to="/video-agent-edit" search={{ id: p.id }} className="video-agent-project-link">
+                  <div className="video-agent-project-slot" data-video-agent-slot="recent-project">
+                    <span className="video-agent-project-thumb">
+                      {p.thumbnailUrl ? <img src={p.thumbnailUrl} alt={p.title} /> : <Film className="size-3.5 opacity-30" />}
+                    </span>
+                    <span className="video-agent-project-name">{p.title}</span>
+                  </div>
+                </Link>
+              ))}
               <div className="video-agent-history-slot" data-video-agent-slot="browse-history">
                 <Clock className="size-3" /> Browse history
               </div>

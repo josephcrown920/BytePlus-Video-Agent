@@ -1163,95 +1163,19 @@ Use 3-5 scenes. Be vivid and specific. Assign realistic durations (2-6 s each fo
             return { error: "Not enough scene images to render previs — try again." };
           }
 
+          // ── Step 4b: Render animatic via the shared renderer ─────────────
+          writeProgress("Compositing animatic…");
           const fsp = await import("fs/promises");
-          const { execFile } = await import("child_process");
-          const { promisify } = await import("util");
-          const { tmpdir } = await import("os");
-          const pathMod = await import("path");
-          const execFileAsync = promisify(execFile);
+          const { renderAnimaticToFile } = await import("../lib/animatic");
 
-          const tmpDir = await fsp.mkdtemp(pathMod.join(tmpdir(), "aura-previs-"));
-          const outputPath = pathMod.join(tmpDir, "previs.mp4");
+          const { filePath: outputPath, tmpDir } = await renderAnimaticToFile(
+            validScenes.map((s) => ({
+              imageUrl: s.imageUrl!,
+              durationSeconds: Math.max(2, s.duration_seconds ?? 3),
+            })),
+          );
 
           try {
-            // Download each signed image URL to disk
-            const framePaths: string[] = [];
-            for (let i = 0; i < validScenes.length; i++) {
-              const imgUrl = validScenes[i].imageUrl!;
-              const imgRes = await fetch(imgUrl, { signal: AbortSignal.timeout(30_000) });
-              if (!imgRes.ok) continue;
-              const buf = Buffer.from(await imgRes.arrayBuffer());
-              const p = pathMod.join(tmpDir, `scene${i}.jpg`);
-              await fsp.writeFile(p, buf);
-              framePaths.push(p);
-            }
-
-            if (framePaths.length < 2) {
-              return { error: "Could not download enough scene images to render previs." };
-            }
-
-            const fadeDuration = 0.4;
-            const durations = framePaths.map((_, i) =>
-              Math.max(2, validScenes[i]?.duration_seconds ?? 3),
-            );
-
-            // Each input loops for scene duration + fade so xfade has overlap material
-            const inputs = framePaths.flatMap((p, i) => [
-              "-loop", "1",
-              "-t", String(durations[i] + fadeDuration),
-              "-i", p,
-            ]);
-
-            // Scale every frame to 1280×720 with letterboxing
-            const scaleFilters = framePaths.map(
-              (_, i) =>
-                `[${i}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}]`,
-            );
-
-            let filterComplex: string;
-            let mapArg: string;
-
-            if (framePaths.length === 1) {
-              filterComplex = scaleFilters[0];
-              mapArg = "[v0]";
-            } else {
-              const xfadeFilters: string[] = [];
-              let prev = "v0";
-              let cumulativeOffset = 0;
-              for (let i = 1; i < framePaths.length; i++) {
-                cumulativeOffset += durations[i - 1];
-                const offset = cumulativeOffset - fadeDuration;
-                const out = i === framePaths.length - 1 ? "out" : `xf${i}`;
-                xfadeFilters.push(
-                  `[${prev}][v${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${Math.max(0, offset)}[${out}]`,
-                );
-                prev = out;
-              }
-              filterComplex = [...scaleFilters, ...xfadeFilters].join(";");
-              mapArg = "[out]";
-            }
-
-            const totalDuration = durations.reduce((a, b) => a + b, 0) - fadeDuration;
-
-            try {
-              await execFileAsync(
-                "ffmpeg",
-                [
-                  ...inputs,
-                  "-filter_complex", filterComplex,
-                  "-map", mapArg,
-                  "-c:v", "libx264",
-                  "-pix_fmt", "yuv420p",
-                  "-t", String(Math.max(1, totalDuration)),
-                  "-y", outputPath,
-                ],
-                { timeout: 180_000 },
-              );
-            } catch (ffErr) {
-              const stderr = (ffErr as { stderr?: string }).stderr?.slice(-600) ?? "";
-              return { error: `Animatic encoding failed.${stderr ? ` FFmpeg: ${stderr}` : ""}` };
-            }
-
             // ── Step 5: Upload and sign ───────────────────────────────────
             writeProgress("Uploading previs…");
             const videoBuffer = await fsp.readFile(outputPath);

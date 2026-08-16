@@ -6,6 +6,16 @@ import { z } from "zod";
 
 const router = Router();
 
+/** Server-side Supabase client (uses the publishable key, uploads go to the artifacts bucket). */
+function getSupabase() {
+  const supabaseUrl = process.env["SUPABASE_URL"];
+  const supabaseKey = process.env["SUPABASE_PUBLISHABLE_KEY"];
+  if (!supabaseUrl || !supabaseKey) throw new Error("Server misconfiguration");
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 function getGateway() {
   const baseURL = process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"];
   const apiKey = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
@@ -453,6 +463,71 @@ router.get("/heygen-status/:sessionId", async (req: Request, res: Response) => {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Status check failed";
+    res.status(502).json({ error: msg });
+  }
+});
+
+/**
+ * POST /api/video-agent/previs
+ * Renders a timed animatic (previs) MP4 from the project's scene frames.
+ * Takes { scenes: [{ imageUrl, duration }] }, downloads each image, cross-fades
+ * them with per-scene timing via FFmpeg, uploads to Supabase, and returns
+ * { videoUrl }. This is what powers the "watch it like a film" step in the
+ * video agent — used on every run.
+ */
+router.post("/previs", async (req: Request, res: Response) => {
+  const userId = await requireAuth(req, res);
+  if (!userId) return;
+
+  const { scenes } = req.body as {
+    scenes: Array<{ imageUrl: string; duration: number }>;
+  };
+
+  const usable = (scenes ?? []).filter((s) => s && s.imageUrl);
+  if (usable.length === 0) {
+    res.status(400).json({ error: "scenes array with imageUrl is required" });
+    return;
+  }
+
+  try {
+    const { renderAnimaticToFile } = await import("../lib/animatic");
+    const { filePath, tmpDir } = await renderAnimaticToFile(
+      usable.map((s) => ({
+        imageUrl: s.imageUrl,
+        durationSeconds: Math.max(2, s.duration ?? 3),
+      })),
+    );
+
+    try {
+      const fsp = await import("fs/promises");
+      const buffer = await fsp.readFile(filePath);
+      const storagePath = `${userId}/${Date.now()}-previs-${Math.random().toString(36).slice(2, 6)}.mp4`;
+
+      const supabase = getSupabase();
+      const { error: uploadError } = await supabase.storage
+        .from("artifacts")
+        .upload(storagePath, buffer, { contentType: "video/mp4" });
+      if (uploadError) {
+        res.status(502).json({ error: `Upload failed: ${uploadError.message}` });
+        return;
+      }
+
+      const { data: signed, error: signError } = await supabase.storage
+        .from("artifacts")
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+      if (signError || !signed?.signedUrl) {
+        res.status(502).json({ error: `Could not create previs URL: ${signError?.message ?? "unknown"}` });
+        return;
+      }
+
+      res.json({ videoUrl: signed.signedUrl, sceneCount: usable.length });
+    } finally {
+      const fsp = await import("fs/promises");
+      await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Previs render failed";
+    console.error("previs error:", msg);
     res.status(502).json({ error: msg });
   }
 });

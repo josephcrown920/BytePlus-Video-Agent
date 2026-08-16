@@ -15,7 +15,7 @@ export const Route = createLazyFileRoute("/video-agent-process")({
   component: AgentProcessing,
 });
 
-type StepId = "script" | "scenes" | "visuals" | "voiceover" | "compile";
+type StepId = "script" | "scenes" | "visuals" | "previs" | "voiceover" | "compile";
 type StepStatus = "pending" | "running" | "done" | "error";
 
 type Step = {
@@ -28,11 +28,12 @@ type Step = {
 };
 
 const INITIAL_STEPS: Step[] = [
-  { id: "script",   label: "Generating script",   sublabel: "AI writes scenes, voiceover text, and timing", icon: FileText,    status: "pending" },
-  { id: "scenes",   label: "Planning scenes",      sublabel: "Breaking script into visual moments",          icon: Clapperboard, status: "pending" },
-  { id: "visuals",  label: "Creating visuals",     sublabel: "Generating cinematic keyframes",               icon: Layers,      status: "pending" },
-  { id: "voiceover",label: "Synthesizing voice",   sublabel: "Recording AI narration",                       icon: Mic,         status: "pending" },
-  { id: "compile",  label: "Compiling video",      sublabel: "Assembling scenes into final video",           icon: Film,        status: "pending" },
+  { id: "script",   label: "Generating script",   sublabel: "AI writes scenes, voiceover text, and timing", icon: FileText,        status: "pending" },
+  { id: "scenes",   label: "Planning scenes",      sublabel: "Breaking script into visual moments",          icon: Clapperboard,     status: "pending" },
+  { id: "visuals",  label: "Creating visuals",     sublabel: "Generating cinematic keyframes",               icon: Layers,           status: "pending" },
+  { id: "previs",   label: "Building previs",      sublabel: "Rendering timed animatic of every scene",      icon: Film,             status: "pending" },
+  { id: "voiceover",label: "Synthesizing voice",   sublabel: "Recording AI narration",                       icon: Mic,              status: "pending" },
+  { id: "compile",  label: "Compiling video",      sublabel: "Assembling scenes into final video",           icon: Clapperboard,     status: "pending" },
 ];
 
 function AgentProcessing() {
@@ -184,7 +185,41 @@ function AgentProcessing() {
 
       setStep("visuals", "done", `${newScenes.length} frames generated`);
 
-      // ── Step 4: Voiceover (simulated — HeyGen/TTS would go here) ──
+      // ── Step 4: Previs — render timed animatic from the frames ──
+      setStep("previs", "running");
+      addLog("Rendering previs animatic…");
+
+      const framesWithImages = newScenes.filter((s) => s.frame && s.frameStatus === "done");
+      try {
+        if (framesWithImages.length < 2) {
+          throw new Error("Need at least 2 rendered frames for a previs.");
+        }
+
+        const previsRes = await fetch("/api/video-agent/previs", {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            scenes: framesWithImages.map((s) => ({ imageUrl: s.frame!, duration: s.duration })),
+          }),
+          signal: abortRef.current.signal,
+        });
+
+        if (!previsRes.ok) {
+          const body = (await previsRes.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `Previs failed (${previsRes.status})`);
+        }
+
+        const { videoUrl } = (await previsRes.json()) as { videoUrl: string };
+        videoAgentStore.update(id, { previsUrl: videoUrl });
+        addLog(`✓ Previs animatic ready — scrubbable in the editor`);
+        setStep("previs", "done", "Animatic ready");
+      } catch (pvErr) {
+        if ((pvErr as Error).name === "AbortError") throw pvErr;
+        addLog(`⚠ Previs skipped: ${(pvErr as Error).message}`);
+        setStep("previs", "error", "Previs unavailable — continuing");
+      }
+
+      // ── Step 5: Voiceover (simulated — HeyGen/TTS would go here) ──
       setStep("voiceover", "running");
       addLog(`Synthesizing voice-over (${project.voice})…`);
       await delay(1500);

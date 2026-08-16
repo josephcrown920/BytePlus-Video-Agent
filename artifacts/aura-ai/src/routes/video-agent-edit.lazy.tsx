@@ -366,6 +366,27 @@ function VideoEditor() {
         </Button>
       </div>
 
+      {/* Previs animatic — rendered on every run */}
+      {project.previsUrl && (
+        <div className="flex-shrink-0 border-b border-border/50 bg-gradient-to-r from-primary/10 to-transparent px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest text-primary flex-shrink-0">
+              <Film className="h-3.5 w-3.5" /> Previs
+            </div>
+            <video
+              key={project.previsUrl}
+              src={project.previsUrl}
+              controls
+              playsInline
+              className="h-24 max-w-[240px] rounded-lg border border-border/50 bg-black/40"
+            />
+            <div className="text-[11px] text-muted-foreground leading-tight">
+              Your timed animatic — scrub to preview timing before generation.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Scene strip / storyboard */}
       <div className="flex-shrink-0 border-b border-border/50 bg-background/60 px-4 py-2.5">
         <div className="flex gap-1.5 overflow-x-auto pb-1">

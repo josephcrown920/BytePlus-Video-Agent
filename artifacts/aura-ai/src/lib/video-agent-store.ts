@@ -39,6 +39,8 @@ export type VideoProject = {
   updatedAt: number;
   exportUrl: string | null;
   thumbnailUrl: string | null;
+  /** Timed previs animatic MP4 (rendered on every run via /api/video-agent/previs). */
+  previsUrl: string | null;
   /** HeyGen avatar look ID selected by the user (null = HeyGen default) */
   heygenAvatarId?: string | null;
   /** HeyGen voice ID selected by the user (null = HeyGen default) */
