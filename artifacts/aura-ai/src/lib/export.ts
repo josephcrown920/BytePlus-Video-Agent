@@ -8,16 +8,27 @@ const CONTENT_W = PAGE_W - MARGIN * 2;
 
 // ── Types ─────────────────────────────────────────────────────────────────
 export type ScriptScene = {
-  scene: number;
+  // Legacy chat-agent fields
+  scene?: number;
   description: string;
-  dialogue: string;
-  duration_seconds: number;
+  dialogue?: string;
+  duration_seconds?: number;
+  // Video-agent fields
+  index?: number;
+  title?: string;
+  script?: string;
+  duration?: number;
 };
 export type ScriptData = {
   title: string;
-  format: string;
-  total_duration_seconds: number;
+  format?: string;
+  total_duration_seconds?: number;
   scenes: ScriptScene[];
+  /** 0-3 s sensory shock — Cinematic Viralist hook */
+  hook?: string;
+  /** Seamless loop line or stinger — Cinematic Viralist close */
+  close?: string;
+  mood?: string;
 };
 
 export type StoryboardScene = {
@@ -79,6 +90,37 @@ function triggerDownload(blob: Blob, filename: string): void {
 }
 
 // ── Script PDF ────────────────────────────────────────────────────────────
+
+/** Returns "Hook" | "Narrative" | "Close" for a scene at position i out of total. */
+function sceneRole(i: number, total: number): "Hook" | "Narrative" | "Close" {
+  if (i === 0) return "Hook";
+  if (i === total - 1) return "Close";
+  return "Narrative";
+}
+
+/** Draw a small role badge (Hook / Narrative / Close) and return the right-edge x. */
+function drawRoleBadge(
+  doc: jsPDF,
+  role: "Hook" | "Narrative" | "Close",
+  x: number,
+  y: number, // baseline
+): number {
+  const label = role.toUpperCase();
+  const badgeW = role === "Narrative" ? 28 : 20;
+
+  // Fill colour: orange for Hook, indigo for Narrative, violet for Close
+  if (role === "Hook") doc.setFillColor(249, 115, 22);       // orange-500
+  else if (role === "Narrative") doc.setFillColor(99, 102, 241); // indigo-500
+  else doc.setFillColor(139, 92, 246);                           // violet-500
+
+  doc.roundedRect(x, y - 4.5, badgeW, 6.5, 2, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text(label, x + badgeW / 2, y + 0.3, { align: "center" });
+  return x + badgeW + 3;
+}
+
 export function downloadScriptPdf(script: ScriptData): void {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   let y = MARGIN;
@@ -90,7 +132,7 @@ export function downloadScriptPdf(script: ScriptData): void {
     }
   };
 
-  // Title
+  // ── Title ────────────────────────────────────────────────────────────────
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
   doc.setTextColor(18, 14, 40);
@@ -98,79 +140,159 @@ export function downloadScriptPdf(script: ScriptData): void {
   doc.text(titleLines, MARGIN, y);
   y += titleLines.length * 9 + 2;
 
-  // Meta line
+  // ── Meta line ────────────────────────────────────────────────────────────
   const formatLabel: Record<string, string> = { video: "Video", ad: "Ad", reel: "Reel" };
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(130, 120, 160);
-  doc.text(
-    `${formatLabel[script.format] ?? script.format}  ·  ${script.total_duration_seconds}s total  ·  ${script.scenes.length} scenes`,
-    MARGIN,
-    y,
-  );
+  const metaParts: string[] = [];
+  if (script.format) metaParts.push(formatLabel[script.format] ?? script.format);
+  if (script.total_duration_seconds != null) metaParts.push(`${script.total_duration_seconds}s total`);
+  metaParts.push(`${script.scenes.length} scenes`);
+  metaParts.push("Hook → Narrative → Close");
+  doc.text(metaParts.join("  ·  "), MARGIN, y);
   y += 5;
 
-  // Rule
+  // ── Divider ──────────────────────────────────────────────────────────────
   doc.setDrawColor(210, 205, 235);
   doc.setLineWidth(0.3);
   doc.line(MARGIN, y, PAGE_W - MARGIN, y);
-  y += 9;
+  y += 8;
 
-  const formatLabel2: Record<string, string> = { video: "Video", ad: "Ad", reel: "Reel" };
-  void formatLabel2;
+  // ── Sensory Hook banner ──────────────────────────────────────────────────
+  if (script.hook) {
+    const hookLines = doc.splitTextToSize(script.hook, CONTENT_W - 24) as string[];
+    const bannerH = hookLines.length * 5 + 12;
+    checkPage(bannerH);
 
-  for (const scene of script.scenes) {
-    doc.setFontSize(10);
-    const descLines = doc.splitTextToSize(scene.description, CONTENT_W - 8) as string[];
-    const dialogLines = scene.dialogue
-      ? (doc.splitTextToSize(`"${scene.dialogue}"`, CONTENT_W - 18) as string[])
-      : [];
+    doc.setFillColor(255, 247, 237); // orange-50
+    doc.roundedRect(MARGIN, y, CONTENT_W, bannerH, 3, 3, "F");
+    doc.setDrawColor(249, 115, 22);
+    doc.setLineWidth(0.5);
+    doc.line(MARGIN, y, MARGIN, y + bannerH);
 
-    const blockH =
-      8 + descLines.length * 5.2 + (dialogLines.length > 0 ? dialogLines.length * 5 + 5 : 0) + 10;
-    checkPage(blockH);
-
-    // Scene badge
-    doc.setFillColor(110, 86, 207);
-    doc.roundedRect(MARGIN, y - 4.5, 22, 6.5, 2, 2, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
-    doc.setTextColor(255, 255, 255);
-    doc.text(`SCENE ${scene.scene}`, MARGIN + 2, y + 0.5);
+    doc.setTextColor(234, 88, 12); // orange-600
+    doc.text("SENSORY HOOK  ·  0 – 3 s", MARGIN + 5, y + 5.5);
 
-    // Duration
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.setTextColor(154, 52, 18); // orange-900
+    doc.text(hookLines, MARGIN + 5, y + 10.5);
+    y += bannerH + 6;
+  }
+
+  // ── Scenes ───────────────────────────────────────────────────────────────
+  const total = script.scenes.length;
+
+  for (let i = 0; i < total; i++) {
+    const scene = script.scenes[i];
+    const role = sceneRole(i, total);
+    const sceneNum = scene.scene ?? scene.index ?? i;
+    const sceneTitle = scene.title;
+    const durationSec = scene.duration_seconds ?? scene.duration;
+
+    // Primary text: prefer the voiceover script, fall back to description
+    const voiceover = scene.script || scene.dialogue;
+    const descText = scene.description;
+
+    doc.setFontSize(10);
+    const descLines = descText
+      ? (doc.splitTextToSize(descText, CONTENT_W - 8) as string[])
+      : [];
+    const voiceLines = voiceover
+      ? (doc.splitTextToSize(`"${voiceover}"`, CONTENT_W - 18) as string[])
+      : [];
+    const titleLineCount = sceneTitle ? 1 : 0;
+
+    const blockH =
+      10 +
+      titleLineCount * 5.5 +
+      descLines.length * 5.2 +
+      (voiceLines.length > 0 ? voiceLines.length * 5 + 5 : 0) +
+      8;
+    checkPage(blockH);
+
+    // Role badge
+    let badgeRight = drawRoleBadge(doc, role, MARGIN, y);
+
+    // Scene number
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(150, 140, 175);
-    doc.text(`${scene.duration_seconds}s`, MARGIN + 26, y + 0.5);
+    doc.text(`Scene ${sceneNum}`, badgeRight, y + 0.5);
+    badgeRight += 18;
+
+    // Duration
+    if (durationSec != null) {
+      doc.text(`${durationSec}s`, badgeRight, y + 0.5);
+    }
     y += 8;
 
-    // Description
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(25, 22, 45);
-    doc.text(descLines, MARGIN + 4, y);
-    y += descLines.length * 5.2 + 2;
+    // Scene title (if present)
+    if (sceneTitle) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(18, 14, 40);
+      doc.text(sceneTitle, MARGIN + 4, y);
+      y += 5.5;
+    }
 
-    // Dialogue
-    if (dialogLines.length > 0) {
+    // Description (visual direction)
+    if (descLines.length > 0) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(25, 22, 45);
+      doc.text(descLines, MARGIN + 4, y);
+      y += descLines.length * 5.2 + 2;
+    }
+
+    // Voiceover / dialogue
+    if (voiceLines.length > 0) {
       doc.setDrawColor(150, 120, 220);
       doc.setLineWidth(0.6);
-      doc.line(MARGIN + 4, y - 1, MARGIN + 4, y + dialogLines.length * 5.2 - 1);
+      doc.line(MARGIN + 4, y - 1, MARGIN + 4, y + voiceLines.length * 5.2 - 1);
       doc.setFont("helvetica", "italic");
       doc.setFontSize(9);
       doc.setTextColor(110, 100, 155);
-      doc.text(dialogLines, MARGIN + 8, y);
-      y += dialogLines.length * 5.2 + 4;
+      doc.text(voiceLines, MARGIN + 8, y);
+      y += voiceLines.length * 5.2 + 4;
     }
 
     // Inter-scene gap + light rule
-    y += 5;
-    if (scene !== script.scenes[script.scenes.length - 1]) {
+    y += 4;
+    if (i < total - 1) {
       doc.setDrawColor(235, 232, 248);
       doc.setLineWidth(0.2);
-      doc.line(MARGIN + 14, y - 3, PAGE_W - MARGIN - 14, y - 3);
+      doc.line(MARGIN + 14, y - 2, PAGE_W - MARGIN - 14, y - 2);
+      y += 4;
     }
+  }
+
+  // ── Aesthetic Close banner ───────────────────────────────────────────────
+  if (script.close) {
+    const closeLines = doc.splitTextToSize(script.close, CONTENT_W - 24) as string[];
+    const bannerH = closeLines.length * 5 + 12;
+    checkPage(bannerH + 6);
+    y += 4;
+
+    doc.setFillColor(245, 243, 255); // violet-50
+    doc.roundedRect(MARGIN, y, CONTENT_W, bannerH, 3, 3, "F");
+    doc.setDrawColor(139, 92, 246);
+    doc.setLineWidth(0.5);
+    doc.line(MARGIN, y, MARGIN, y + bannerH);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(109, 40, 217); // violet-700
+    doc.text("AESTHETIC CLOSE  ·  Loop / Stinger", MARGIN + 5, y + 5.5);
+
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.setTextColor(76, 29, 149); // violet-900
+    doc.text(closeLines, MARGIN + 5, y + 10.5);
+    y += bannerH;
   }
 
   const pdfBlob = doc.output("blob");
