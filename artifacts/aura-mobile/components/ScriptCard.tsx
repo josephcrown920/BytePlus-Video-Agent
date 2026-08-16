@@ -18,6 +18,8 @@ type ScriptOutput = {
   hook?: string;
   close?: string;
   scenes: ScriptScene[];
+  /** Set by the server when Scene 0 failed the sensory-hook quality check after one retry. */
+  hookWarning?: boolean;
 };
 
 export function ScriptCard({ result }: { result: unknown }) {
@@ -31,6 +33,7 @@ export function ScriptCard({ result }: { result: unknown }) {
   const hookColors = CINEMATIC_ROLE_COLORS.Hook;
   const closeColors = CINEMATIC_ROLE_COLORS.Close;
   const narrativeColors = CINEMATIC_ROLE_COLORS.Narrative;
+  const hasHookWarning = Boolean(script.hookWarning);
 
   const durationLabel = script.total_duration_seconds
     ? `${script.total_duration_seconds}s`
@@ -89,6 +92,14 @@ export function ScriptCard({ result }: { result: unknown }) {
               </View>
 
               <View style={styles.sceneBody}>
+                {isFirst && hasHookWarning && (
+                  <View style={[styles.hookWarning, { backgroundColor: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.4)' }]}>
+                    <Feather name="alert-triangle" size={11} color="#ca8a04" />
+                    <Text style={[styles.hookWarningText, { color: '#ca8a04' }]}>
+                      Opening may not be a strong sensory hook — consider regenerating
+                    </Text>
+                  </View>
+                )}
                 <Text style={[styles.sceneDesc, { color: colors.foreground }]}>
                   {scene.description}
                 </Text>
@@ -233,5 +244,20 @@ const styles = StyleSheet.create({
   duration: {
     fontSize: 10,
     fontFamily: 'Inter_400Regular',
+  },
+  hookWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  hookWarningText: {
+    flex: 1,
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 15,
   },
 });

@@ -5,6 +5,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createClient } from "@supabase/supabase-js";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText, tool, type LanguageModel, type UIMessage } from "ai";
 import { z } from "zod";
+import { isWeakHook } from "../lib/hook-quality.js";
 
 export type ModelId = "gpt" | "claude" | "gemini" | "grok";
 
@@ -486,8 +487,18 @@ router.post("/", async (req: Request, res: Response) => {
         duration_seconds: z.number().optional().describe("Target total duration in seconds"),
       }),
       execute: async ({ topic, format, duration_seconds }) => {
-        try {
-          const userPrompt = `Write a ${format} script about: "${topic}".${duration_seconds ? ` Target duration: ${duration_seconds} seconds.` : ""}
+        type ScriptResult = {
+          title: string;
+          format: string;
+          total_duration_seconds: number;
+          hook: string;
+          scenes: { scene: number; description: string; dialogue: string; duration_seconds: number }[];
+          close: string;
+          mood?: string;
+          hookWarning?: boolean;
+        };
+
+        const basePrompt = `Write a ${format} script about: "${topic}".${duration_seconds ? ` Target duration: ${duration_seconds} seconds.` : ""}
 
 ## CINEMATIC VIRALIST BLUEPRINT (mandatory)
 Every script MUST follow this 3-step structure:
@@ -512,6 +523,10 @@ Return ONLY valid JSON (no markdown fences) in this exact shape:
 }
 Use 3-6 scenes. Scene 1 is the Hook (visceral, no title cards). The final scene is the Close (loop or stinger). Be vivid, cinematic, and specific. Detect mood: if the topic signals hype, launch, sport, or action, set mood to "high-energy".`;
 
+        /** Call the model with the given messages and return the parsed script, or throw. */
+        async function callScriptModel(
+          messages: { role: "user" | "assistant"; content: string }[],
+        ): Promise<ScriptResult> {
           const res = await fetch(`${openaiBaseUrl}/chat/completions`, {
             method: "POST",
             headers: {
@@ -520,29 +535,73 @@ Use 3-6 scenes. Scene 1 is the Hook (visceral, no title cards). The final scene 
             },
             body: JSON.stringify({
               model: "gpt-4o-mini",
-              messages: [{ role: "user", content: userPrompt }],
+              messages,
               response_format: { type: "json_object" },
               temperature: 0.8,
             }),
           });
           if (!res.ok) {
             const detail = await res.text();
-            return { error: `Script generation failed (${res.status}): ${detail.slice(0, 200)}` };
+            throw new Error(`Script generation failed (${res.status}): ${detail.slice(0, 200)}`);
           }
-          const json = (await res.json()) as {
-            choices?: { message?: { content?: string } }[];
-          };
+          const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
           const content = json.choices?.[0]?.message?.content;
-          if (!content) return { error: "No script returned from model." };
-          const scriptResult = JSON.parse(content) as {
-            title: string;
-            format: string;
-            total_duration_seconds: number;
-            hook: string;
-            scenes: { scene: number; description: string; dialogue: string; duration_seconds: number }[];
-            close: string;
-            mood?: string;
-          };
+          if (!content) throw new Error("No script returned from model.");
+          return JSON.parse(content) as ScriptResult;
+        }
+
+        try {
+          // ── First attempt ─────────────────────────────────────────────────
+          const firstMessages = [{ role: "user" as const, content: basePrompt }];
+          let scriptResult = await callScriptModel(firstMessages);
+
+          // ── Hook quality guard ────────────────────────────────────────────
+          const scene1Desc = scriptResult.scenes?.[0]?.description ?? "";
+          if (isWeakHook(scene1Desc, scriptResult.hook ?? "")) {
+            console.warn(
+              "generate_script (chat): Scene 1 failed hook-quality check — retrying with correction. " +
+              `description="${scene1Desc.slice(0, 120)}"`,
+            );
+            try {
+              // Pass the bad draft back to the model with an explicit correction instruction.
+              const correctionMessages = [
+                { role: "user" as const, content: basePrompt },
+                { role: "assistant" as const, content: JSON.stringify(scriptResult) },
+                {
+                  role: "user" as const,
+                  content:
+                    `CORRECTION REQUIRED: Scene 1 opened with a prohibited opener: ` +
+                    `"${scene1Desc.slice(0, 200)}". ` +
+                    `This violates the Cinematic Viralist blueprint — it must NOT be a title card, logo, ` +
+                    `establishing shot, fade-in, or any form of introduction. ` +
+                    `Replace Scene 1 with a concrete, action-first, sensory image: a close-up, an unexpected ` +
+                    `contrast, a fast cut, or a single arresting frame that stops the scroll in under 1 second. ` +
+                    `Regenerate the full script now with this correction applied. Return ONLY the corrected JSON.`,
+                },
+              ];
+              const retryResult = await callScriptModel(correctionMessages);
+              const retryScene1Desc = retryResult.scenes?.[0]?.description ?? "";
+
+              if (isWeakHook(retryScene1Desc, retryResult.hook ?? "")) {
+                // Correction retry also weak — flag it so the UI can warn the user.
+                console.warn(
+                  "generate_script (chat): correction retry also failed hook-quality check — setting hookWarning=true. " +
+                  `description="${retryScene1Desc.slice(0, 120)}"`,
+                );
+                scriptResult = { ...retryResult, hookWarning: true };
+              } else {
+                scriptResult = retryResult;
+              }
+            } catch (retryErr) {
+              // Retry call itself failed — keep original result and flag it.
+              console.error(
+                "generate_script (chat): correction retry error:",
+                retryErr instanceof Error ? retryErr.message : retryErr,
+              );
+              scriptResult = { ...scriptResult, hookWarning: true };
+            }
+          }
+
           if (scriptResult.title) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             void (supabase as any).from("content_items").insert({
@@ -1067,6 +1126,39 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
           .describe("Target format: video (long-form), ad (30-60s), reel (15-30s). Defaults to reel."),
       }),
       execute: async ({ topic, format = "reel" }) => {
+        type PrevisScene = {
+          scene: number;
+          description: string;
+          image_prompt: string;
+          dialogue: string;
+          duration_seconds: number;
+        };
+        type PrevisScript = { title: string; scenes: PrevisScene[] };
+
+        /** Call the model for a previs script with the given messages. */
+        async function callPrevisScriptModel(
+          messages: { role: "user" | "assistant"; content: string }[],
+        ): Promise<PrevisScript> {
+          const res = await fetch(`${openaiBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              Authorization: `Bearer ${openaiApiKey}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages,
+              response_format: { type: "json_object" },
+              temperature: 0.8,
+            }),
+          });
+          if (!res.ok) throw new Error(`Script generation failed (${res.status})`);
+          const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+          const content = json.choices?.[0]?.message?.content;
+          if (!content) throw new Error("No script returned from model.");
+          return JSON.parse(content) as PrevisScript;
+        }
+
         try {
           // ── Step 1: Generate structured script ────────────────────────────
           writeProgress("Developing script…");
@@ -1092,39 +1184,53 @@ Return ONLY valid JSON (no markdown fences):
 }
 Use 3-5 scenes. Be vivid and specific. Assign realistic durations (2-6 s each for reels, 3-8 s each for ads/videos).`;
 
-          const scriptRes = await fetch(`${openaiBaseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              Authorization: `Bearer ${openaiApiKey}`,
-            },
-            body: JSON.stringify({
-              model: "gpt-4o-mini",
-              messages: [{ role: "user", content: scriptPrompt }],
-              response_format: { type: "json_object" },
-              temperature: 0.8,
-            }),
-          });
+          let script = await callPrevisScriptModel([{ role: "user", content: scriptPrompt }]);
+          let hookWarning = false;
 
-          if (!scriptRes.ok) {
-            return { error: `Script generation failed (${scriptRes.status})` };
+          // ── Hook quality guard ────────────────────────────────────────────
+          const scene1Desc = script.scenes?.[0]?.description ?? "";
+          if (isWeakHook(scene1Desc, "")) {
+            console.warn(
+              "previs: Scene 1 failed hook-quality check — retrying with correction. " +
+              `description="${scene1Desc.slice(0, 120)}"`,
+            );
+            try {
+              const correctionMessages: { role: "user" | "assistant"; content: string }[] = [
+                { role: "user", content: scriptPrompt },
+                { role: "assistant", content: JSON.stringify(script) },
+                {
+                  role: "user",
+                  content:
+                    `CORRECTION REQUIRED: Scene 1 opened with a prohibited opener: ` +
+                    `"${scene1Desc.slice(0, 200)}". ` +
+                    `This violates the Cinematic Viralist blueprint — Scene 1 must NOT be a title card, logo, ` +
+                    `establishing shot, fade-in, or any introduction. ` +
+                    `Replace Scene 1 with a concrete, action-first, sensory image: a close-up, unexpected ` +
+                    `contrast, a fast cut, or a single arresting frame that stops the scroll in under 1 second. ` +
+                    `Regenerate the full script now with this fix applied. Return ONLY the corrected JSON.`,
+                },
+              ];
+              const retryScript = await callPrevisScriptModel(correctionMessages);
+              const retryScene1Desc = retryScript.scenes?.[0]?.description ?? "";
+
+              if (isWeakHook(retryScene1Desc, "")) {
+                console.warn(
+                  "previs: correction retry also failed hook-quality check — proceeding with hookWarning=true. " +
+                  `description="${retryScene1Desc.slice(0, 120)}"`,
+                );
+                script = retryScript;
+                hookWarning = true;
+              } else {
+                script = retryScript;
+              }
+            } catch (retryErr) {
+              console.error(
+                "previs: correction retry error — proceeding with original script + hookWarning=true:",
+                retryErr instanceof Error ? retryErr.message : retryErr,
+              );
+              hookWarning = true;
+            }
           }
-          const scriptJson = (await scriptRes.json()) as {
-            choices?: { message?: { content?: string } }[];
-          };
-          const scriptContent = scriptJson.choices?.[0]?.message?.content;
-          if (!scriptContent) return { error: "No script returned from model." };
-
-          const script = JSON.parse(scriptContent) as {
-            title: string;
-            scenes: {
-              scene: number;
-              description: string;
-              image_prompt: string;
-              dialogue: string;
-              duration_seconds: number;
-            }[];
-          };
 
           const sceneCount = script.scenes?.length ?? 0;
           if (sceneCount === 0) return { error: "Script has no scenes." };
@@ -1197,6 +1303,7 @@ Use 3-5 scenes. Be vivid and specific. Assign realistic durations (2-6 s each fo
               title: script.title,
               videoUrl: signed.signedUrl,
               scenes: timedScenes,
+              ...(hookWarning ? { hookWarning: true } : {}),
             };
           } finally {
             await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});

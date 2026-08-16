@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
   CheckCircle2, Circle, Loader2, AlertCircle,
-  Film, ArrowRight, Wand2, Mic, Layers, Clapperboard, FileText,
+  Film, ArrowRight, Wand2, Mic, Layers, Clapperboard, FileText, TriangleAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,13 +27,19 @@ type Step = {
   detail?: string;
 };
 
+type ScriptData = {
+  title: string;
+  scenes: Array<{ index: number; title: string; script: string; description: string; duration: number }>;
+  hookWarning?: boolean;
+};
+
 const INITIAL_STEPS: Step[] = [
-  { id: "script",   label: "Generating script",   sublabel: "AI writes scenes, voiceover text, and timing", icon: FileText,        status: "pending" },
-  { id: "scenes",   label: "Planning scenes",      sublabel: "Breaking script into visual moments",          icon: Clapperboard,     status: "pending" },
-  { id: "visuals",  label: "Creating visuals",     sublabel: "Generating cinematic keyframes",               icon: Layers,           status: "pending" },
-  { id: "previs",   label: "Building previs",      sublabel: "Rendering timed animatic of every scene",      icon: Film,             status: "pending" },
-  { id: "voiceover",label: "Synthesizing voice",   sublabel: "Recording AI narration",                       icon: Mic,              status: "pending" },
-  { id: "compile",  label: "Compiling video",      sublabel: "Assembling scenes into final video",           icon: Clapperboard,     status: "pending" },
+  { id: "script",   label: "Generating script",   sublabel: "AI writes scenes, voiceover text, and timing", icon: FileText,    status: "pending" },
+  { id: "scenes",   label: "Planning scenes",      sublabel: "Breaking script into visual moments",          icon: Clapperboard, status: "pending" },
+  { id: "visuals",  label: "Creating visuals",     sublabel: "Generating cinematic keyframes",               icon: Layers,      status: "pending" },
+  { id: "previs",   label: "Building previs",      sublabel: "Rendering timed animatic of every scene",      icon: Film,        status: "pending" },
+  { id: "voiceover",label: "Synthesizing voice",   sublabel: "Recording AI narration",                       icon: Mic,         status: "pending" },
+  { id: "compile",  label: "Compiling video",      sublabel: "Assembling scenes into final video",           icon: Clapperboard, status: "pending" },
 ];
 
 function AgentProcessing() {
@@ -44,9 +50,13 @@ function AgentProcessing() {
   const [scenes, setScenes] = useState<VideoScene[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  /** Non-null when the script passed but Scene 0 failed the hook-quality check. Pipeline is paused. */
+  const [hookWarningScript, setHookWarningScript] = useState<ScriptData | null>(null);
   const hasStarted = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+  /** Cached auth headers for the pause-and-resume path. */
+  const authHeadersRef = useRef<Record<string, string> | null>(null);
 
   const project = videoAgentStore.get(id);
 
@@ -68,6 +78,135 @@ function AgentProcessing() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // ── Steps 2-6: scene planning → visuals → previs → voiceover → compile ─────
+  async function continueFromScript(
+    scriptData: ScriptData,
+    authHeaders: Record<string, string>,
+  ) {
+    const title = scriptData.title ?? "Untitled Video";
+
+    // ── Step 2: Plan Scenes ──
+    setStep("scenes", "running");
+
+    const newScenes: VideoScene[] = scriptData.scenes.map((s) => ({
+      id: vaUid(),
+      index: s.index,
+      title: s.title,
+      script: s.script,
+      description: s.description,
+      duration: s.duration,
+      frame: null,
+      frameStatus: "idle" as const,
+      voiceoverStatus: "idle" as const,
+    }));
+
+    videoAgentStore.update(id, { title, scenes: newScenes });
+    setScenes(newScenes);
+    newScenes.forEach((s, i) => addLog(`  Scene ${i + 1}: "${s.title}" (${s.duration}s)`));
+    setStep("scenes", "done", `${newScenes.length} scenes planned`);
+
+    // ── Step 3: Generate Visuals ──
+    setStep("visuals", "running");
+    addLog("Generating cinematic keyframes…");
+
+    const styleHints: Record<string, string> = {
+      cinematic: "cinematic anamorphic, 35mm film grain, teal-orange color grade",
+      minimal: "clean minimal, soft light, negative space, modern",
+      vibrant: "vibrant saturated colors, dynamic, energetic, bold",
+      documentary: "natural light, candid, handheld, authentic documentary",
+    };
+    const styleHint = styleHints[project?.style ?? ""] ?? "cinematic";
+    let firstFrameUrl: string | null = null;
+
+    for (let i = 0; i < newScenes.length; i++) {
+      const sc = newScenes[i];
+      addLog(`  Generating frame ${i + 1}/${newScenes.length}: "${sc.title}"`);
+      videoAgentStore.updateScene(id, sc.id, { frameStatus: "loading" });
+      setScenes((prev) => prev.map((s) => s.id === sc.id ? { ...s, frameStatus: "loading" } : s));
+
+      try {
+        const frameRes = await fetch("/api/video-agent/generate-frame", {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ prompt: `${sc.description}. Style: ${styleHint}. Cinematic keyframe.` }),
+          signal: abortRef.current?.signal,
+        });
+
+        if (!frameRes.ok) throw new Error(`Frame generation failed: ${frameRes.status}`);
+        const { url } = (await frameRes.json()) as { url: string };
+
+        videoAgentStore.updateScene(id, sc.id, { frame: url, frameStatus: "done" });
+        setScenes((prev) => prev.map((s) => s.id === sc.id ? { ...s, frame: url, frameStatus: "done" } : s));
+        if (!firstFrameUrl) {
+          firstFrameUrl = url;
+          videoAgentStore.update(id, { thumbnailUrl: url });
+        }
+        addLog(`  ✓ Frame ${i + 1} ready`);
+      } catch (imgErr) {
+        if ((imgErr as Error).name === "AbortError") throw imgErr;
+        addLog(`  ⚠ Frame ${i + 1} failed: ${(imgErr as Error).message}`);
+        videoAgentStore.updateScene(id, sc.id, { frameStatus: "error" });
+        setScenes((prev) => prev.map((s) => s.id === sc.id ? { ...s, frameStatus: "error" } : s));
+      }
+    }
+
+    setStep("visuals", "done", `${newScenes.length} frames generated`);
+
+    // ── Step 4: Previs — render timed animatic from the frames ──
+    setStep("previs", "running");
+    addLog("Rendering previs animatic…");
+
+    const framesWithImages = newScenes.filter((s) => s.frame && s.frameStatus === "done");
+    try {
+      if (framesWithImages.length < 2) {
+        throw new Error("Need at least 2 rendered frames for a previs.");
+      }
+
+      const previsRes = await fetch("/api/video-agent/previs", {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          scenes: framesWithImages.map((s) => ({ imageUrl: s.frame!, duration: s.duration })),
+        }),
+        signal: abortRef.current?.signal,
+      });
+
+      if (!previsRes.ok) {
+        const body = (await previsRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Previs failed (${previsRes.status})`);
+      }
+
+      const { videoUrl } = (await previsRes.json()) as { videoUrl: string };
+      videoAgentStore.update(id, { previsUrl: videoUrl });
+      addLog(`✓ Previs animatic ready — scrubbable in the editor`);
+      setStep("previs", "done", "Animatic ready");
+    } catch (pvErr) {
+      if ((pvErr as Error).name === "AbortError") throw pvErr;
+      addLog(`⚠ Previs skipped: ${(pvErr as Error).message}`);
+      setStep("previs", "error", "Previs unavailable — continuing");
+    }
+
+    // ── Step 5: Voiceover (simulated — HeyGen/TTS would go here) ──
+    setStep("voiceover", "running");
+    addLog(`Synthesizing voice-over (${project?.voice ?? "default"})…`);
+    await delay(1500);
+    newScenes.forEach((_, i) => addLog(`  ✓ Voice recorded: scene ${i + 1}`));
+    setStep("voiceover", "done", `${newScenes.length} tracks`);
+
+    // ── Step 6: Compile ──
+    setStep("compile", "running");
+    addLog("Assembling scenes…");
+    await delay(1800);
+    addLog("✓ Video compiled — opening editor…");
+    setStep("compile", "done", "Ready");
+
+    videoAgentStore.update(id, { status: "editing", statusMessage: "Ready to edit" });
+    setDone(true);
+    await delay(1000);
+    navigate({ to: "/video-agent-edit", search: { id } });
+  }
+
+  // ── Full pipeline: step 1 (script) then continueFromScript ────────────────
   async function runPipeline() {
     if (!project) {
       setError("Project not found. Please go back and try again.");
@@ -87,6 +226,7 @@ function AgentProcessing() {
       "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
     };
+    authHeadersRef.current = authHeaders;
 
     try {
       // ── Step 1: Generate Script ──
@@ -109,134 +249,22 @@ function AgentProcessing() {
         throw new Error(`Script generation failed: ${await scriptRes.text()}`);
       }
 
-      const scriptData = (await scriptRes.json()) as {
-        title: string;
-        scenes: Array<{ index: number; title: string; script: string; description: string; duration: number }>;
-      };
-
+      const scriptData = (await scriptRes.json()) as ScriptData;
       const title = scriptData.title ?? "Untitled Video";
+
+      if (scriptData.hookWarning) {
+        // Both the first attempt and the correction retry produced a weak hook.
+        // Pause the pipeline so the user can decide before committing visuals/voiceover.
+        addLog(`⚠ Scene 0 may not be a genuine sensory hook — paused for review`);
+        setStep("script", "done", `${scriptData.scenes.length} scenes (hook warning)`);
+        setHookWarningScript(scriptData);
+        return; // pipeline halted — user must choose via the warning UI
+      }
+
       addLog(`✓ Script ready: "${title}" — ${scriptData.scenes.length} scenes`);
       setStep("script", "done", `${scriptData.scenes.length} scenes`);
 
-      // ── Step 2: Plan Scenes ──
-      setStep("scenes", "running");
-
-      const newScenes: VideoScene[] = scriptData.scenes.map((s) => ({
-        id: vaUid(),
-        index: s.index,
-        title: s.title,
-        script: s.script,
-        description: s.description,
-        duration: s.duration,
-        frame: null,
-        frameStatus: "idle" as const,
-        voiceoverStatus: "idle" as const,
-      }));
-
-      videoAgentStore.update(id, { title, scenes: newScenes });
-      setScenes(newScenes);
-      newScenes.forEach((s, i) => addLog(`  Scene ${i + 1}: "${s.title}" (${s.duration}s)`));
-      setStep("scenes", "done", `${newScenes.length} scenes planned`);
-
-      // ── Step 3: Generate Visuals ──
-      setStep("visuals", "running");
-      addLog("Generating cinematic keyframes…");
-
-      const styleHints: Record<string, string> = {
-        cinematic: "cinematic anamorphic, 35mm film grain, teal-orange color grade",
-        minimal: "clean minimal, soft light, negative space, modern",
-        vibrant: "vibrant saturated colors, dynamic, energetic, bold",
-        documentary: "natural light, candid, handheld, authentic documentary",
-      };
-      const styleHint = styleHints[project.style] ?? "cinematic";
-      let firstFrameUrl: string | null = null;
-
-      for (let i = 0; i < newScenes.length; i++) {
-        const sc = newScenes[i];
-        addLog(`  Generating frame ${i + 1}/${newScenes.length}: "${sc.title}"`);
-        videoAgentStore.updateScene(id, sc.id, { frameStatus: "loading" });
-        setScenes((prev) => prev.map((s) => s.id === sc.id ? { ...s, frameStatus: "loading" } : s));
-
-        try {
-          const frameRes = await fetch("/api/video-agent/generate-frame", {
-            method: "POST",
-            headers: authHeaders,
-            body: JSON.stringify({ prompt: `${sc.description}. Style: ${styleHint}. Cinematic keyframe.` }),
-            signal: abortRef.current?.signal,
-          });
-
-          if (!frameRes.ok) throw new Error(`Frame generation failed: ${frameRes.status}`);
-          const { url } = (await frameRes.json()) as { url: string };
-
-          videoAgentStore.updateScene(id, sc.id, { frame: url, frameStatus: "done" });
-          setScenes((prev) => prev.map((s) => s.id === sc.id ? { ...s, frame: url, frameStatus: "done" } : s));
-          if (!firstFrameUrl) {
-            firstFrameUrl = url;
-            videoAgentStore.update(id, { thumbnailUrl: url });
-          }
-          addLog(`  ✓ Frame ${i + 1} ready`);
-        } catch (imgErr) {
-          if ((imgErr as Error).name === "AbortError") throw imgErr;
-          addLog(`  ⚠ Frame ${i + 1} failed: ${(imgErr as Error).message}`);
-          videoAgentStore.updateScene(id, sc.id, { frameStatus: "error" });
-          setScenes((prev) => prev.map((s) => s.id === sc.id ? { ...s, frameStatus: "error" } : s));
-        }
-      }
-
-      setStep("visuals", "done", `${newScenes.length} frames generated`);
-
-      // ── Step 4: Previs — render timed animatic from the frames ──
-      setStep("previs", "running");
-      addLog("Rendering previs animatic…");
-
-      const framesWithImages = newScenes.filter((s) => s.frame && s.frameStatus === "done");
-      try {
-        if (framesWithImages.length < 2) {
-          throw new Error("Need at least 2 rendered frames for a previs.");
-        }
-
-        const previsRes = await fetch("/api/video-agent/previs", {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify({
-            scenes: framesWithImages.map((s) => ({ imageUrl: s.frame!, duration: s.duration })),
-          }),
-          signal: abortRef.current.signal,
-        });
-
-        if (!previsRes.ok) {
-          const body = (await previsRes.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error ?? `Previs failed (${previsRes.status})`);
-        }
-
-        const { videoUrl } = (await previsRes.json()) as { videoUrl: string };
-        videoAgentStore.update(id, { previsUrl: videoUrl });
-        addLog(`✓ Previs animatic ready — scrubbable in the editor`);
-        setStep("previs", "done", "Animatic ready");
-      } catch (pvErr) {
-        if ((pvErr as Error).name === "AbortError") throw pvErr;
-        addLog(`⚠ Previs skipped: ${(pvErr as Error).message}`);
-        setStep("previs", "error", "Previs unavailable — continuing");
-      }
-
-      // ── Step 5: Voiceover (simulated — HeyGen/TTS would go here) ──
-      setStep("voiceover", "running");
-      addLog(`Synthesizing voice-over (${project.voice})…`);
-      await delay(1500);
-      newScenes.forEach((_, i) => addLog(`  ✓ Voice recorded: scene ${i + 1}`));
-      setStep("voiceover", "done", `${newScenes.length} tracks`);
-
-      // ── Step 5: Compile ──
-      setStep("compile", "running");
-      addLog("Assembling scenes…");
-      await delay(1800);
-      addLog("✓ Video compiled — opening editor…");
-      setStep("compile", "done", "Ready");
-
-      videoAgentStore.update(id, { status: "editing", statusMessage: "Ready to edit" });
-      setDone(true);
-      await delay(1000);
-      navigate({ to: "/video-agent-edit", search: { id } });
+      await continueFromScript(scriptData, authHeaders);
 
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
@@ -247,6 +275,33 @@ function AgentProcessing() {
       setSteps((prev) => prev.map((s) => (s.status === "running" ? { ...s, status: "error" } : s)));
       toast.error(msg);
     }
+  }
+
+  /** User chose to continue despite the hook warning. Resume from step 2. */
+  async function handleContinueAnyway() {
+    if (!hookWarningScript || !authHeadersRef.current) return;
+    const scriptData = hookWarningScript;
+    const authHeaders = authHeadersRef.current;
+    setHookWarningScript(null);
+    addLog(`▶ Continuing with script despite hook warning`);
+    const title = scriptData.title ?? "Untitled Video";
+    addLog(`  Script: "${title}" — ${scriptData.scenes.length} scenes`);
+    try {
+      await continueFromScript(scriptData, authHeaders);
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return;
+      const msg = (err as Error).message;
+      setError(msg);
+      addLog(`✗ Error: ${msg}`);
+      videoAgentStore.update(id, { status: "failed", statusMessage: msg });
+      setSteps((prev) => prev.map((s) => (s.status === "running" ? { ...s, status: "error" } : s)));
+      toast.error(msg);
+    }
+  }
+
+  /** User chose to start over entirely (fresh script + pipeline). */
+  function handleStartOver() {
+    navigate({ to: "/video-agent" });
   }
 
   const progress = steps.filter((s) => s.status === "done").length / steps.length;
@@ -272,7 +327,7 @@ function AgentProcessing() {
           <Wand2 className="h-3.5 w-3.5 text-primary" /> Aurora Agent · Processing
         </div>
         <h1 className="text-3xl font-bold tracking-tight">
-          {done ? "Video ready!" : "Creating your video…"}
+          {done ? "Video ready!" : hookWarningScript ? "Review required" : "Creating your video…"}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground line-clamp-2">{project.prompt}</p>
 
@@ -287,6 +342,36 @@ function AgentProcessing() {
           <span>{Math.round(progress * 100)}% complete</span>
           <span>{steps.filter((s) => s.status === "done").length}/{steps.length} steps</span>
         </div>
+
+        {/* Hook warning banner — shown when pipeline is paused */}
+        {hookWarningScript && (
+          <div className="mt-6 rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-4">
+            <div className="flex items-start gap-3">
+              <TriangleAlert className="mt-0.5 h-5 w-5 flex-shrink-0 text-yellow-500" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-yellow-500">Opening scene may not be a strong sensory hook</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The AI generated a script but Scene 1 didn't pass the hook quality check — it may open with a title card,
+                  logo, or establishing shot instead of a visceral 0-3 second visual that stops the scroll.
+                  You can continue anyway or start over with a new prompt.
+                </p>
+                {hookWarningScript.scenes[0]?.description && (
+                  <p className="mt-2 rounded-md bg-muted/60 px-3 py-2 text-[11px] font-mono text-muted-foreground line-clamp-3">
+                    Scene 1: {hookWarningScript.scenes[0].description}
+                  </p>
+                )}
+                <div className="mt-3 flex gap-2">
+                  <Button size="sm" variant="secondary" onClick={handleContinueAnyway}>
+                    Continue anyway
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={handleStartOver}>
+                    Start over
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[300px_1fr]">
           {/* Steps */}
@@ -314,6 +399,9 @@ function AgentProcessing() {
                     {step.label}
                     {step.status === "running" && (
                       <span className="text-[10px] text-primary animate-pulse">live</span>
+                    )}
+                    {step.id === "script" && hookWarningScript && (
+                      <TriangleAlert className="h-3.5 w-3.5 text-yellow-500" />
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
@@ -369,7 +457,7 @@ function AgentProcessing() {
               {log.map((line, i) => (
                 <div key={i} className="text-muted-foreground leading-relaxed">{line}</div>
               ))}
-              {!error && !done && (
+              {!error && !done && !hookWarningScript && (
                 <div className="flex items-center gap-1 text-primary animate-pulse"><span>▌</span></div>
               )}
               <div ref={logEndRef} />
@@ -378,7 +466,7 @@ function AgentProcessing() {
         </div>
 
         {/* Actions */}
-        {(done || error) && (
+        {(done || error) && !hookWarningScript && (
           <div className="mt-8 flex gap-3">
             {done && (
               <Button

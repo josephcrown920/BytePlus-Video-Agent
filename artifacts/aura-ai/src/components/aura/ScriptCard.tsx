@@ -1,4 +1,4 @@
-import { Clapperboard, Clock, Download, Zap, BookOpen, Sparkles } from "lucide-react";
+import { Clapperboard, Clock, Download, Zap, BookOpen, Sparkles, TriangleAlert } from "lucide-react";
 import { downloadScriptPdf, type ScriptData } from "@/lib/export";
 import { cinematicSceneRole, CINEMATIC_ROLE_STYLES } from "@/lib/video-agent-skills";
 
@@ -24,6 +24,8 @@ type ScriptOutput = {
   /** Seamless loop line or stinger — Cinematic Viralist close */
   close?: string;
   mood?: string;
+  /** Set when Scene 0/1 failed the sensory-hook quality check after one automatic correction retry. */
+  hookWarning?: boolean;
 };
 
 const ROLE_ICONS = {
@@ -104,6 +106,8 @@ export function ScriptCard({ output }: { output: unknown }) {
           const durationSec = scene.duration_seconds ?? scene.duration;
           const text = scene.dialogue || scene.script || scene.description;
 
+          const isHookScene = i === 0;
+
           return (
             <div key={sceneNum} className="space-y-1.5 px-4 py-3">
               <div className="flex items-center gap-2">
@@ -118,7 +122,18 @@ export function ScriptCard({ output }: { output: unknown }) {
                     {durationSec}s
                   </span>
                 )}
+                {isHookScene && script.hookWarning && (
+                  <span className="flex items-center gap-1 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-500">
+                    <TriangleAlert className="size-2.5" />
+                    Weak hook
+                  </span>
+                )}
               </div>
+              {isHookScene && script.hookWarning && (
+                <p className="rounded-md border border-yellow-500/20 bg-yellow-500/8 px-2.5 py-2 text-[11px] text-yellow-400/80">
+                  ⚠ This opening may be a title card, logo, or establishing shot rather than a visceral sensory hook. Consider regenerating the script.
+                </p>
+              )}
               {scene.title && (
                 <p className="text-xs font-semibold leading-tight text-foreground">{scene.title}</p>
               )}
