@@ -1,12 +1,14 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Download, Film, ImageOff, Loader2, Pencil, RefreshCw, X } from "lucide-react";
+import { Download, Film, ImageOff, Loader2, Pencil, RefreshCw, Share2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import {
   downloadStoryboardImages,
   downloadStoryboardPdf,
   type StoryboardData,
 } from "@/lib/export";
 import { cinematicSceneRole, CINEMATIC_ROLE_STYLES } from "@/lib/video-agent-skills";
+import { createShareLink } from "@/lib/share";
 
 type Scene = {
   scene: number;
@@ -48,7 +50,15 @@ async function generateImage(prompt: string): Promise<string | null> {
   return json.imageUrl ?? null;
 }
 
-function SceneFrame({ scene, isPending = false }: { scene: Scene; isPending?: boolean }) {
+function SceneFrame({
+  scene,
+  isPending = false,
+  readOnly = false,
+}: {
+  scene: Scene;
+  isPending?: boolean;
+  readOnly?: boolean;
+}) {
   const [imgState, setImgState] = useState<SceneImageState>(
     scene.imageUrl ? { status: "loading" } : isPending ? { status: "pending" } : { status: "error" },
   );
@@ -60,6 +70,7 @@ function SceneFrame({ scene, isPending = false }: { scene: Scene; isPending?: bo
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const retry = useCallback(async () => {
+    if (readOnly) return;
     setImgState({ status: "retrying" });
     try {
       const url = await generateImage(scene.image_prompt);
@@ -69,7 +80,7 @@ function SceneFrame({ scene, isPending = false }: { scene: Scene; isPending?: bo
     } catch {
       setImgState({ status: "error" });
     }
-  }, [scene.image_prompt]);
+  }, [scene.image_prompt, readOnly]);
 
   const openEdit = useCallback(() => {
     setEditPrompt(scene.image_prompt);
@@ -149,20 +160,29 @@ function SceneFrame({ scene, isPending = false }: { scene: Scene; isPending?: bo
 
         {/* Error / retry state */}
         {isError && (
-          <button
-            type="button"
-            onClick={retry}
-            className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-surface-elevated/90 text-center transition-colors hover:bg-surface-elevated"
-          >
-            <ImageOff className="size-4 text-muted-foreground/50" />
-            <span className="px-2 text-[9px] leading-tight text-muted-foreground">
-              Image unavailable
-            </span>
-            <span className="flex items-center gap-0.5 text-[9px] font-medium text-primary">
-              <RefreshCw className="size-2.5" />
-              Tap to retry
-            </span>
-          </button>
+          readOnly ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-surface-elevated/90 text-center">
+              <ImageOff className="size-4 text-muted-foreground/50" />
+              <span className="px-2 text-[9px] leading-tight text-muted-foreground">
+                Image unavailable
+              </span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={retry}
+              className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-surface-elevated/90 text-center transition-colors hover:bg-surface-elevated"
+            >
+              <ImageOff className="size-4 text-muted-foreground/50" />
+              <span className="px-2 text-[9px] leading-tight text-muted-foreground">
+                Image unavailable
+              </span>
+              <span className="flex items-center gap-0.5 text-[9px] font-medium text-primary">
+                <RefreshCw className="size-2.5" />
+                Tap to retry
+              </span>
+            </button>
+          )
         )}
 
         {/* Retrying spinner */}
@@ -174,7 +194,7 @@ function SceneFrame({ scene, isPending = false }: { scene: Scene; isPending?: bo
         )}
 
         {/* Edit button — shown on hover when image is loaded */}
-        {isLoaded && hovered && !editLoading && (
+        {isLoaded && hovered && !editLoading && !readOnly && (
           <button
             type="button"
             onClick={openEdit}
@@ -230,10 +250,19 @@ function SceneFrame({ scene, isPending = false }: { scene: Scene; isPending?: bo
   );
 }
 
-export function StoryboardCard({ output, isPending = false }: { output: unknown; isPending?: boolean }) {
+export function StoryboardCard({
+  output,
+  isPending = false,
+  readOnly = false,
+}: {
+  output: unknown;
+  isPending?: boolean;
+  readOnly?: boolean;
+}) {
   const board = output as StoryboardOutput;
   const [pdfLoading, setPdfLoading] = useState(false);
   const [zipLoading, setZipLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
 
   if (!board?.title || !Array.isArray(board.scenes)) return null;
 
@@ -257,6 +286,18 @@ export function StoryboardCard({ output, isPending = false }: { output: unknown;
     }
   }
 
+  async function handleShare() {
+    setShareLoading(true);
+    try {
+      await createShareLink("storyboard", board as unknown as Record<string, unknown>);
+      toast.success("Share link copied to clipboard");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't create share link");
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface">
       {/* Header */}
@@ -271,6 +312,18 @@ export function StoryboardCard({ output, isPending = false }: { output: unknown;
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={() => void handleShare()}
+              disabled={shareLoading || isPending}
+              aria-label="Share storyboard"
+              title="Copy share link"
+              className="flex size-8 items-center justify-center rounded-lg border border-white/10 bg-surface text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground disabled:opacity-50"
+            >
+              {shareLoading ? <Loader2 className="size-3 animate-spin" /> : <Share2 className="size-3.5" />}
+            </button>
+          )}
           <button
             type="button"
             onClick={handleDownload}
@@ -309,7 +362,7 @@ export function StoryboardCard({ output, isPending = false }: { output: unknown;
             <div key={scene.scene} className="flex gap-3 p-4">
               {/* Frame image with loading / retry states */}
               <div className="shrink-0">
-                <SceneFrame scene={scene} isPending={isPending && !scene.imageUrl} />
+                 <SceneFrame scene={scene} isPending={isPending && !scene.imageUrl} readOnly={readOnly} />
               </div>
 
               {/* Scene details */}

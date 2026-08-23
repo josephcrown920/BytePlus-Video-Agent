@@ -24,7 +24,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /share:
+    post:
+      operationId: createShareLink
+      tags: [share]
+      summary: Create a public share link
+      description: Saves an authenticated user's script or storyboard as a public immutable snapshot.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShareRequest"
+      responses:
+        "201":
+          description: Share link created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateShareResponse"
+        "400":
+          description: Invalid share payload
+        "401":
+          description: Authentication required
+  /share/{id}:
+    get:
+      operationId: getSharedContent
+      tags: [share]
+      summary: Get public shared content
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shared script or storyboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedContent"
+        "404":
+          description: Shared content not found
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +82,48 @@ components:
           type: string
       required:
         - status
+    CreateShareRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [script, storyboard]
+        data:
+          type: object
+          additionalProperties: true
+      required:
+        - type
+        - data
+    CreateShareResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+      required:
+        - id
+        - url
+    SharedContent:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [script, storyboard]
+        title:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - title
+        - data
+        - created_at
 

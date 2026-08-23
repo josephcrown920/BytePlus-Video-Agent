@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
+  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { cinematicSceneRole, CINEMATIC_ROLE_COLORS } from '@/lib/cinematic';
+import { copyShareLink } from '@/lib/share';
 
 type Scene = {
   scene: number;
@@ -60,6 +62,7 @@ function SceneImage({ scene }: { scene: Scene }) {
 
 export function StoryboardCard({ result }: { result: unknown }) {
   const colors = useColors();
+  const [sharing, setSharing] = useState(false);
   const board = result as StoryboardOutput;
 
   if (!board?.title || !Array.isArray(board.scenes) || board.scenes.length === 0) {
@@ -67,6 +70,21 @@ export function StoryboardCard({ result }: { result: unknown }) {
   }
 
   const total = board.scenes.length;
+
+  const handleShare = async () => {
+    setSharing(true);
+    try {
+      await copyShareLink('storyboard', board as unknown as Record<string, unknown>);
+      Alert.alert('Link copied', 'Anyone with this link can view this storyboard.');
+    } catch (error) {
+      Alert.alert(
+        'Could not create link',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setSharing(false);
+    }
+  };
 
   return (
     <View style={[styles.card, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
@@ -83,6 +101,19 @@ export function StoryboardCard({ result }: { result: unknown }) {
             {total}-scene storyboard · Hook → Narrative → Close
           </Text>
         </View>
+        <TouchableOpacity
+          accessibilityLabel="Copy storyboard share link"
+          accessibilityHint="Creates a public view-only link and copies it to your clipboard"
+          disabled={sharing}
+          onPress={() => void handleShare()}
+          style={[
+            styles.shareButton,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+            sharing && styles.shareButtonDisabled,
+          ]}
+        >
+          <Feather name={sharing ? 'loader' : 'share-2'} size={15} color={colors.mutedForeground} />
+        </TouchableOpacity>
       </View>
 
       {/* Scenes */}
@@ -155,6 +186,17 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+  },
+  shareButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareButtonDisabled: {
+    opacity: 0.55,
   },
   headerTitle: {
     fontSize: 13,

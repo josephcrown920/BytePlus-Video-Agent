@@ -1,8 +1,9 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { CINEMATIC_ROLE_COLORS } from '@/lib/cinematic';
+import { copyShareLink } from '@/lib/share';
 
 type ScriptScene = {
   scene: number;
@@ -24,6 +25,7 @@ type ScriptOutput = {
 
 export function ScriptCard({ result }: { result: unknown }) {
   const colors = useColors();
+  const [sharing, setSharing] = useState(false);
   const script = result as ScriptOutput;
 
   if (!script?.title || !Array.isArray(script.scenes) || script.scenes.length === 0) {
@@ -40,6 +42,21 @@ export function ScriptCard({ result }: { result: unknown }) {
     : null;
   const formatLabel = script.format ?? 'script';
 
+  const handleShare = async () => {
+    setSharing(true);
+    try {
+      await copyShareLink('script', script as unknown as Record<string, unknown>);
+      Alert.alert('Link copied', 'Anyone with this link can view this script.');
+    } catch (error) {
+      Alert.alert(
+        'Could not create link',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
     <View style={[styles.card, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
       {/* Header */}
@@ -55,6 +72,19 @@ export function ScriptCard({ result }: { result: unknown }) {
             {formatLabel}{durationLabel ? ` · ${durationLabel}` : ''} · Hook → Narrative → Close
           </Text>
         </View>
+        <TouchableOpacity
+          accessibilityLabel="Copy script share link"
+          accessibilityHint="Creates a public view-only link and copies it to your clipboard"
+          disabled={sharing}
+          onPress={() => void handleShare()}
+          style={[
+            styles.shareButton,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+            sharing && styles.shareButtonDisabled,
+          ]}
+        >
+          <Feather name={sharing ? 'loader' : 'share-2'} size={15} color={colors.mutedForeground} />
+        </TouchableOpacity>
       </View>
 
       {/* Hook banner */}
@@ -158,6 +188,17 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+  },
+  shareButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareButtonDisabled: {
+    opacity: 0.55,
   },
   headerTitle: {
     fontSize: 13,

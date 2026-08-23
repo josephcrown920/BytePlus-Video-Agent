@@ -127,6 +127,33 @@ export type Database = {
         }
         Relationships: []
       }
+      shared_content: {
+        Row: {
+          id: string
+          user_id: string
+          type: "script" | "storyboard"
+          title: string
+          data: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          type: "script" | "storyboard"
+          title: string
+          data: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          type?: "script" | "storyboard"
+          title?: string
+          data?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
       threads: {
         Row: {
           created_at: string

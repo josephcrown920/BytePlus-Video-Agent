@@ -1,6 +1,9 @@
-import { Clapperboard, Clock, Download, Zap, BookOpen, Sparkles, TriangleAlert } from "lucide-react";
+import { Clapperboard, Clock, Download, Share2, Zap, BookOpen, Sparkles, TriangleAlert, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { downloadScriptPdf, type ScriptData } from "@/lib/export";
 import { cinematicSceneRole, CINEMATIC_ROLE_STYLES } from "@/lib/video-agent-skills";
+import { createShareLink } from "@/lib/share";
 
 type Scene = {
   scene: number;
@@ -34,7 +37,8 @@ const ROLE_ICONS = {
   Close: Sparkles,
 } as const;
 
-export function ScriptCard({ output }: { output: unknown }) {
+export function ScriptCard({ output, readOnly = false }: { output: unknown; readOnly?: boolean }) {
+  const [shareLoading, setShareLoading] = useState(false);
   const script = output as ScriptOutput;
   if (!script?.title || !Array.isArray(script.scenes)) return null;
 
@@ -49,6 +53,18 @@ export function ScriptCard({ output }: { output: unknown }) {
 
   function handleDownload() {
     downloadScriptPdf(script as ScriptData);
+  }
+
+  async function handleShare() {
+    setShareLoading(true);
+    try {
+      await createShareLink("script", script as unknown as Record<string, unknown>);
+      toast.success("Share link copied to clipboard");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't create share link");
+    } finally {
+      setShareLoading(false);
+    }
   }
 
   return (
@@ -72,6 +88,18 @@ export function ScriptCard({ output }: { output: unknown }) {
           <span className="shrink-0 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-orange-400">
             High Energy
           </span>
+        )}
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => void handleShare()}
+            disabled={shareLoading}
+            aria-label="Share script"
+            title="Copy share link"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-surface text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground disabled:opacity-50"
+          >
+            {shareLoading ? <Loader2 className="size-3 animate-spin" /> : <Share2 className="size-3.5" />}
+          </button>
         )}
         <button
           type="button"
