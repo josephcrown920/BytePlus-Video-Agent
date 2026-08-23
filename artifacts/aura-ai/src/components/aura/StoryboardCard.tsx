@@ -1,7 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Download, Film, ImageOff, Loader2, Pencil, RefreshCw, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { downloadStoryboardPdf, type StoryboardData } from "@/lib/export";
+import {
+  downloadStoryboardImages,
+  downloadStoryboardPdf,
+  type StoryboardData,
+} from "@/lib/export";
 import { cinematicSceneRole, CINEMATIC_ROLE_STYLES } from "@/lib/video-agent-skills";
 
 type Scene = {
@@ -229,6 +233,7 @@ function SceneFrame({ scene, isPending = false }: { scene: Scene; isPending?: bo
 export function StoryboardCard({ output, isPending = false }: { output: unknown; isPending?: boolean }) {
   const board = output as StoryboardOutput;
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [zipLoading, setZipLoading] = useState(false);
 
   if (!board?.title || !Array.isArray(board.scenes)) return null;
 
@@ -240,6 +245,15 @@ export function StoryboardCard({ output, isPending = false }: { output: unknown;
       await downloadStoryboardPdf(board as StoryboardData);
     } finally {
       setPdfLoading(false);
+    }
+  }
+
+  async function handleImagesDownload() {
+    setZipLoading(true);
+    try {
+      await downloadStoryboardImages(board as StoryboardData);
+    } finally {
+      setZipLoading(false);
     }
   }
 
@@ -256,19 +270,34 @@ export function StoryboardCard({ output, isPending = false }: { output: unknown;
             {total}-scene storyboard · Hook → Narrative → Close
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={pdfLoading || isPending}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground disabled:opacity-50"
-        >
-          {pdfLoading ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <Download className="size-3" />
-          )}
-          {pdfLoading ? "Generating…" : "PDF"}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={pdfLoading || zipLoading || isPending}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground disabled:opacity-50"
+          >
+            {pdfLoading ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <Download className="size-3" />
+            )}
+            {pdfLoading ? "Generating…" : "PDF"}
+          </button>
+          <button
+            type="button"
+            onClick={handleImagesDownload}
+            disabled={pdfLoading || zipLoading || isPending}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground disabled:opacity-50"
+          >
+            {zipLoading ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <Download className="size-3" />
+            )}
+            {zipLoading ? "Packaging…" : "Images (.zip)"}
+          </button>
+        </div>
       </div>
 
       {/* Scenes grid */}

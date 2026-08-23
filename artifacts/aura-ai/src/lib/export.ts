@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import JSZip from "jszip";
 
 // ── Constants ─────────────────────────────────────────────────────────────
 const PAGE_W = 210;
@@ -393,6 +394,58 @@ export async function downloadStoryboardPdf(board: StoryboardData): Promise<void
 
   const pdfBlob = doc.output("blob");
   triggerDownload(pdfBlob, `${safeName(board.title)}-storyboard.pdf`);
+}
+
+/** Download the available storyboard images as sequentially named PNG files in a ZIP. */
+export async function downloadStoryboardImages(board: StoryboardData): Promise<void> {
+  const zip = new JSZip();
+  const skippedFrames: string[] = [];
+  const imageResults = await Promise.all(
+    board.scenes.map(async (scene, index) => {
+      const frameName = `frame-${index + 1}.png`;
+
+      if (!scene.imageUrl) {
+        skippedFrames.push(`${frameName} (no image URL)`);
+        return null;
+      }
+
+      try {
+        const response = await fetch(scene.imageUrl);
+        if (!response.ok) {
+          skippedFrames.push(`${frameName} (image request failed)`);
+          return null;
+        }
+
+        return { frameName, blob: await response.blob() };
+      } catch {
+        skippedFrames.push(`${frameName} (image request failed)`);
+        return null;
+      }
+    }),
+  );
+
+  for (const result of imageResults) {
+    if (result) {
+      zip.file(result.frameName, result.blob);
+    }
+  }
+
+  const readmeLines = [
+    "STORYBOARD IMAGES",
+    "",
+    "Each available storyboard frame is included as a PNG file.",
+  ];
+  if (skippedFrames.length > 0) {
+    readmeLines.push(
+      "",
+      "Skipped frames:",
+      ...skippedFrames.map((frame) => `- ${frame}`),
+    );
+  }
+  zip.file("README.txt", `${readmeLines.join("\n")}\n`);
+
+  const zipBlob = await zip.generateAsync({ type: "blob", mimeType: "application/zip" });
+  triggerDownload(zipBlob, `${safeName(board.title)}-storyboard-images.zip`);
 }
 
 function drawPlaceholder(

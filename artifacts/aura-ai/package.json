@@ -79,6 +79,7 @@
   },
   "dependencies": {
     "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "wouter": "catalog:"
   }
 }
