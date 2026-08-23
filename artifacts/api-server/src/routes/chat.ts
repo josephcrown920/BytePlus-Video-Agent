@@ -747,10 +747,28 @@ Return ONLY valid JSON (no markdown fences):
             }[];
           };
 
-          // Step 2: generate a reference image for each scene in parallel
-          // Each scene gets up to 2 attempts with 1.5 s back-off before falling back to null.
+          // Step 2: Emit initial board metadata immediately so the UI can show
+          // skeletons for all scenes before any images have finished.
+          try {
+            videoProgressWriter?.write({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              type: "data-storyboard_init" as any,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              data: {
+                title: board.title,
+                concept: board.concept,
+                scenes: board.scenes.map((s) => ({ ...s, imageUrl: null })),
+              } as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any);
+          } catch { /* stream may not be ready */ }
+
+          writeProgress(`Generating ${count} scene images…`);
+
+          // Step 3: Generate images in parallel, emitting each scene as soon as
+          // its image is ready so the frontend can progressively fill the grid.
           const scenesWithImages = await Promise.all(
-            board.scenes.map(async (scene) => {
+            board.scenes.map(async (scene, idx) => {
               const imageUrl = await generateSceneImage(
                 scene.image_prompt,
                 userId,
@@ -759,6 +777,17 @@ Return ONLY valid JSON (no markdown fences):
                 supabase,
                 scene.scene,
               );
+              // Emit this individual scene as soon as the image is ready
+              try {
+                videoProgressWriter?.write({
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  type: "data-storyboard_scene" as any,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  data: { index: idx, imageUrl } as any,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any);
+              } catch { /* stream may be closing */ }
+              writeProgress(`Scene ${idx + 1}/${count} ready…`);
               return { ...scene, imageUrl };
             }),
           );

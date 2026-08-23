@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Download, Film, ImageOff, Loader2, Pencil, RefreshCw, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadStoryboardPdf, type StoryboardData } from "@/lib/export";
@@ -19,6 +19,7 @@ type StoryboardOutput = {
 };
 
 type SceneImageState =
+  | { status: "pending" }
   | { status: "loading" }
   | { status: "loaded" }
   | { status: "error" }
@@ -43,9 +44,9 @@ async function generateImage(prompt: string): Promise<string | null> {
   return json.imageUrl ?? null;
 }
 
-function SceneFrame({ scene }: { scene: Scene }) {
+function SceneFrame({ scene, isPending = false }: { scene: Scene; isPending?: boolean }) {
   const [imgState, setImgState] = useState<SceneImageState>(
-    scene.imageUrl ? { status: "loading" } : { status: "error" },
+    scene.imageUrl ? { status: "loading" } : isPending ? { status: "pending" } : { status: "error" },
   );
   const [currentUrl, setCurrentUrl] = useState<string | null>(scene.imageUrl);
   const [hovered, setHovered] = useState(false);
@@ -95,9 +96,18 @@ function SceneFrame({ scene }: { scene: Scene }) {
     }
   }, [editPrompt]);
 
+  // When scene.imageUrl arrives (streaming: was null, now has a URL), kick off the load
+  useEffect(() => {
+    if (scene.imageUrl && !currentUrl) {
+      setCurrentUrl(scene.imageUrl);
+      setImgState({ status: "loading" });
+    }
+  }, [scene.imageUrl, currentUrl]);
+
   const isRetrying = imgState.status === "retrying";
   const isError = imgState.status === "error";
   const isLoaded = imgState.status === "loaded";
+  const isPendingState = imgState.status === "pending";
 
   return (
     <div className="flex flex-col gap-1">
@@ -107,7 +117,15 @@ function SceneFrame({ scene }: { scene: Scene }) {
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        {/* Skeleton — shown while loading */}
+        {/* Pending skeleton — image generation not started yet */}
+        {isPendingState && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 animate-pulse bg-white/5">
+            <Loader2 className="size-4 animate-spin text-primary/40" />
+            <span className="text-[9px] text-muted-foreground/50">Generating…</span>
+          </div>
+        )}
+
+        {/* Skeleton — shown while image URL is loading */}
         {imgState.status === "loading" && (
           <div className="absolute inset-0 animate-pulse bg-white/5" />
         )}
@@ -208,7 +226,7 @@ function SceneFrame({ scene }: { scene: Scene }) {
   );
 }
 
-export function StoryboardCard({ output }: { output: unknown }) {
+export function StoryboardCard({ output, isPending = false }: { output: unknown; isPending?: boolean }) {
   const board = output as StoryboardOutput;
   const [pdfLoading, setPdfLoading] = useState(false);
 
@@ -241,7 +259,7 @@ export function StoryboardCard({ output }: { output: unknown }) {
         <button
           type="button"
           onClick={handleDownload}
-          disabled={pdfLoading}
+          disabled={pdfLoading || isPending}
           className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground disabled:opacity-50"
         >
           {pdfLoading ? (
@@ -262,7 +280,7 @@ export function StoryboardCard({ output }: { output: unknown }) {
             <div key={scene.scene} className="flex gap-3 p-4">
               {/* Frame image with loading / retry states */}
               <div className="shrink-0">
-                <SceneFrame scene={scene} />
+                <SceneFrame scene={scene} isPending={isPending && !scene.imageUrl} />
               </div>
 
               {/* Scene details */}

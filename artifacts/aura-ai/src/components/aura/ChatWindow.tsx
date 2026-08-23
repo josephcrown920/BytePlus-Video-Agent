@@ -386,9 +386,9 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                           const toolName = toolPart.toolName ?? rawName;
                           const hasOutput = toolPart.state === "output-available";
 
-                          // Resolve live progress label for video generation while it is running
+                          // Resolve live progress label for video/storyboard generation while running
                           let videoProgress: string | undefined;
-                          if (toolName === "generate_video" && !hasOutput) {
+                          if ((toolName === "generate_video" || toolName === "storyboard") && !hasOutput) {
                             // Scan message parts (in reverse) for the latest transient progress annotation
                             for (let j = message.parts.length - 1; j >= 0; j--) {
                               const p = message.parts[j] as { type?: string; data?: { label?: string } };
@@ -396,6 +396,38 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                                 videoProgress = p.data.label;
                                 break;
                               }
+                            }
+                          }
+
+                          // Reconstruct partial storyboard from streaming data events
+                          type PartialScene = {
+                            scene: number;
+                            title: string;
+                            description: string;
+                            image_prompt: string;
+                            imageUrl: string | null;
+                          };
+                          let liveStoryboard: { title: string; concept: string; scenes: PartialScene[] } | null = null;
+                          if (toolName === "storyboard" && !hasOutput) {
+                            let initData: { title: string; concept: string; scenes: PartialScene[] } | null = null;
+                            const sceneOverrides: Record<number, string | null> = {};
+                            for (const p of message.parts) {
+                              const dp = p as { type?: string; data?: Record<string, unknown> };
+                              if (dp.type === "data-storyboard_init" && dp.data) {
+                                initData = dp.data as { title: string; concept: string; scenes: PartialScene[] };
+                              }
+                              if (dp.type === "data-storyboard_scene" && dp.data) {
+                                const { index, imageUrl } = dp.data as { index: number; imageUrl: string | null };
+                                sceneOverrides[index] = imageUrl;
+                              }
+                            }
+                            if (initData) {
+                              liveStoryboard = {
+                                ...initData,
+                                scenes: initData.scenes.map((s, i) =>
+                                  i in sceneOverrides ? { ...s, imageUrl: sceneOverrides[i] } : s,
+                                ),
+                              };
                             }
                           }
 
@@ -426,7 +458,8 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                               </div>
                             );
                           }
-                          if (hasOutput && toolName === "storyboard") {
+                          if (toolName === "storyboard" && (hasOutput || liveStoryboard)) {
+                            const storyboardOutput = hasOutput ? toolPart.output : liveStoryboard;
                             return (
                               <div key={index} className="space-y-2">
                                 <ToolActivity
@@ -434,8 +467,9 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                                   state={toolPart.state}
                                   input={toolPart.input}
                                   output={toolPart.output}
+                                  progress={videoProgress}
                                 />
-                                <StoryboardCard output={toolPart.output} />
+                                <StoryboardCard output={storyboardOutput} isPending={!hasOutput} />
                               </div>
                             );
                           }
