@@ -219,6 +219,153 @@ function getOpenAiSpeakingInstructions(speakingStyle?: string): string | undefin
   return style ? `Speak in a ${style} style. Keep the delivery natural and suited to a polished video voiceover.` : undefined;
 }
 
+export type VoiceoverProvider = "elevenlabs" | "openai" | "none";
+
+export type VoiceoverSynthesisResult = {
+  audioBuffer: Buffer | null;
+  provider: VoiceoverProvider;
+};
+
+// The first real OpenAI TTS request doubles as a reachability probe. Keeping
+// this process-wide avoids repeating the warning for every video when the
+// proxy does not expose /audio/speech.
+let openAiTtsProbeCompleted = false;
+
+function logOpenAiTtsProbe(response: globalThis.Response): void {
+  if (openAiTtsProbeCompleted) return;
+  openAiTtsProbeCompleted = true;
+
+  if (response.ok) {
+    console.info("OpenAI TTS endpoint probe succeeded.");
+    return;
+  }
+
+  if (response.status === 404 || response.status === 405) {
+    console.warn(
+      `Voiceover warning: OpenAI TTS endpoint is not available on the configured AI integration proxy ` +
+        `(HTTP ${response.status} at /audio/speech).`,
+    );
+    return;
+  }
+
+  console.warn(
+    `Voiceover warning: OpenAI TTS endpoint probe returned HTTP ${response.status}; ` +
+      "the OpenAI voiceover fallback may be unavailable.",
+  );
+}
+
+function logOpenAiTtsProbeError(error: unknown): void {
+  if (openAiTtsProbeCompleted) return;
+  openAiTtsProbeCompleted = true;
+  console.warn(
+    "Voiceover warning: OpenAI TTS endpoint probe could not reach /audio/speech; " +
+      "the OpenAI voiceover fallback may be unavailable.",
+    error instanceof Error ? error.message : error,
+  );
+}
+
+async function synthesizeOpenAiVoiceover(
+  text: string,
+  voice: string | undefined,
+  speakingStyle: string | undefined,
+  openaiBaseUrl: string,
+  openaiApiKey: string,
+): Promise<Buffer | null> {
+  const openAiVoice =
+    voice && Object.prototype.hasOwnProperty.call(OPENAI_VOICES, voice)
+      ? voice
+      : "alloy";
+  const speakingInstructions = getOpenAiSpeakingInstructions(speakingStyle);
+
+  try {
+    const ttsRes = await fetch(`${openaiBaseUrl.replace(/\/$/, "")}/audio/speech`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: speakingStyle?.trim() ? "gpt-4o-mini-tts" : "tts-1",
+        input: text,
+        voice: openAiVoice,
+        response_format: "mp3",
+        ...(speakingInstructions ? { instructions: speakingInstructions } : {}),
+      }),
+    });
+    logOpenAiTtsProbe(ttsRes);
+    if (!ttsRes.ok) {
+      console.warn(`Voiceover warning: OpenAI TTS synthesis failed (HTTP ${ttsRes.status}).`);
+      return null;
+    }
+    const audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
+    return audioBuffer.length > 0 ? audioBuffer : null;
+  } catch (error) {
+    logOpenAiTtsProbeError(error);
+    console.warn(
+      "Voiceover warning: OpenAI TTS synthesis failed; no audio was returned.",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
+export async function synthesizeVoiceover(
+  text: string,
+  voice: string | undefined,
+  speakingStyle: string | undefined,
+  openaiBaseUrl: string,
+  openaiApiKey: string,
+  elevenLabsKey = process.env["ELEVENLABS_API_KEY"],
+): Promise<VoiceoverSynthesisResult> {
+  if (elevenLabsKey) {
+    try {
+      const { voiceId } = resolveElevenLabsVoice(voice);
+      const elRes = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`,
+        {
+          method: "POST",
+          headers: {
+            "xi-api-key": elevenLabsKey,
+            "content-type": "application/json",
+            accept: "audio/mpeg",
+          },
+          body: JSON.stringify({
+            text,
+            model_id: "eleven_turbo_v2_5",
+            voice_settings: getSpeakingStyleSettings(speakingStyle),
+          }),
+        },
+      );
+      if (elRes.ok) {
+        const audioBuffer = Buffer.from(await elRes.arrayBuffer());
+        if (audioBuffer.length > 0) {
+          return { audioBuffer, provider: "elevenlabs" };
+        }
+      } else {
+        console.warn(
+          `Voiceover warning: ElevenLabs synthesis failed (HTTP ${elRes.status}); trying OpenAI TTS fallback.`,
+        );
+      }
+    } catch (error) {
+      console.warn(
+        "Voiceover warning: ElevenLabs synthesis failed; trying OpenAI TTS fallback.",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  const audioBuffer = await synthesizeOpenAiVoiceover(
+    text,
+    voice,
+    speakingStyle,
+    openaiBaseUrl,
+    openaiApiKey,
+  );
+  return audioBuffer
+    ? { audioBuffer, provider: "openai" }
+    : { audioBuffer: null, provider: "none" };
+}
+
 export {
   ELEVENLABS_VOICES,
   OPENAI_VOICES,
@@ -232,7 +379,7 @@ const SYSTEM = `You are Aura, a premium autonomous AI agent for designers, found
 You have real tools. Use them proactively instead of guessing:
 - web_search + fetch_url for anything current, factual, or link-based. Always cite sources as markdown links.
 - generate_image whenever a visual is requested. After it returns, embed the image with markdown: ![alt](imageUrl).
-- generate_video whenever someone asks for a video clip, reel, animation or moving visual. After it returns, embed with HTML: <video src="videoUrl" controls autoplay loop muted style="max-width:100%;border-radius:12px"></video>. When the user asks for an ad, reel, or any video with narration, always include a voiceover_text with the script dialogue — never leave it empty for ads.
+- generate_video whenever someone asks for a video clip, reel, animation or moving visual. After it returns, embed with HTML: <video src="videoUrl" controls autoplay loop muted style="max-width:100%;border-radius:12px"></video>. When the user asks for an ad, reel, or any video with narration, always include a voiceover_text with the script dialogue — never leave it empty for ads. If the result includes voiceover_provider, tell the user whether ElevenLabs or OpenAI supplied the narration; if it is "none", explain that the video is silent.
 - For ads, branded videos, reels, or any narrated video, offer a concise voice choice before generating when the user has not specified one. Explain that the voice character and speaking style can be customized, then use the user's selection in generate_video. Use the provider-specific voice options included below. If the user does not care, choose a fitting option and state what you chose.
 - previs to create a full interactive pre-visualization animatic: script → per-scene images → timed MP4 the user can scrub through. Use whenever someone asks for a previs, animatic, shot preview, visual development, or to "see what the video will look like". After it returns, embed the video the same way as generate_video; the UI will automatically show the interactive scene strip.
 - generate_script to produce a structured video/ad/reel script with scenes and dialogue.
@@ -927,7 +1074,7 @@ Return ONLY valid JSON (no markdown fences):
 
     generate_video: tool({
       description:
-        `Generate a short AI video clip from a text prompt. Creates a real MP4 video by generating cinematic key-frame images and blending them together with smooth crossfade transitions. Optionally adds an AI voiceover narration to the video. Use whenever someone asks for a video, reel, clip, short film, or animated visual — especially ads, reels, or branded content where a voiceover would enhance the output. Returns a URL to the MP4 file. When voiceover is requested, honor the selected voice and speaking style. OpenAI voice options: ${OPENAI_VOICE_GUIDE}. If ElevenLabs is active, use a curated voice name or ID from: ${ELEVENLABS_VOICE_GUIDE}.`,
+        `Generate a short AI video clip from a text prompt. Creates a real MP4 video by generating cinematic key-frame images and blending them together with smooth crossfade transitions. Optionally adds an AI voiceover narration to the video. Use whenever someone asks for a video, reel, clip, short film, or animated visual — especially ads, reels, or branded content where a voiceover would enhance the output. Returns a URL to the MP4 file plus voiceover_provider ("elevenlabs", "openai", or "none"). Report the provider to the user, and if voiceover_provider is "none", report that the video is silent. When voiceover is requested, honor the selected voice and speaking style. OpenAI voice options: ${OPENAI_VOICE_GUIDE}. If ElevenLabs is active, use a curated voice name or ID from: ${ELEVENLABS_VOICE_GUIDE}.`,
       inputSchema: z.object({
         prompt: z.string().describe("Describe the video scene or concept to generate"),
         style: z
@@ -1165,93 +1312,54 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
 
             // Step 4 (optional): Synthesize voiceover and mux into the video
             let finalVideoPath = outputPath;
+            let voiceoverProvider: VoiceoverProvider = "none";
             if (voiceover_text?.trim()) {
               writeProgress("Synthesizing voiceover…");
+              const voiceoverResult = await synthesizeVoiceover(
+                voiceover_text,
+                voice,
+                speaking_style,
+                openaiBaseUrl,
+                openaiApiKey,
+              );
+              voiceoverProvider = voiceoverResult.provider;
+              if (!voiceoverResult.audioBuffer) {
+                console.error("Voiceover unavailable: both TTS providers failed.");
+                return {
+                  error: "Voiceover unavailable — video is silent",
+                  voiceover_provider: "none" as const,
+                };
+              }
+
+              const audioPath = path.join(tmpDir, "voiceover.mp3");
+              const muxedPath = path.join(tmpDir, "video_with_audio.mp4");
               try {
-                const audioPath = path.join(tmpDir, "voiceover.mp3");
-                const muxedPath = path.join(tmpDir, "video_with_audio.mp4");
+                await fsp.writeFile(audioPath, voiceoverResult.audioBuffer);
+                writeProgress("Mixing audio…");
 
-                // Prefer ElevenLabs if key is present, otherwise use OpenAI TTS
-                const elevenLabsKey = process.env["ELEVENLABS_API_KEY"];
-                let audioBuffer: Buffer | null = null;
-
-                if (elevenLabsKey) {
-                  const { voiceId } = resolveElevenLabsVoice(voice);
-                  const elRes = await fetch(
-                    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`,
-                    {
-                      method: "POST",
-                      headers: {
-                        "xi-api-key": elevenLabsKey,
-                        "content-type": "application/json",
-                        accept: "audio/mpeg",
-                      },
-                      body: JSON.stringify({
-                        text: voiceover_text,
-                        model_id: "eleven_turbo_v2_5",
-                        voice_settings: getSpeakingStyleSettings(speaking_style),
-                      }),
-                    },
-                  );
-                  if (elRes.ok) {
-                    audioBuffer = Buffer.from(await elRes.arrayBuffer());
-                  }
-                }
-
-                if (!audioBuffer) {
-                  // OpenAI TTS fallback. gpt-4o-mini-tts supports delivery
-                  // instructions while retaining the familiar voice choices.
-                  const openAiVoice =
-                    voice && Object.prototype.hasOwnProperty.call(OPENAI_VOICES, voice)
-                      ? voice
-                      : "alloy";
-                  const speakingInstructions = getOpenAiSpeakingInstructions(speaking_style);
-                  const ttsRes = await fetch(`${openaiBaseUrl}/audio/speech`, {
-                    method: "POST",
-                    headers: {
-                      "content-type": "application/json",
-                      Authorization: `Bearer ${openaiApiKey}`,
-                    },
-                    body: JSON.stringify({
-                      model: speaking_style?.trim() ? "gpt-4o-mini-tts" : "tts-1",
-                      input: voiceover_text,
-                      voice: openAiVoice,
-                      response_format: "mp3",
-                      ...(speakingInstructions
-                        ? { instructions: speakingInstructions }
-                        : {}),
-                    }),
-                  });
-                  if (ttsRes.ok) {
-                    audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
-                  }
-                }
-
-                if (audioBuffer && audioBuffer.length > 0) {
-                  await fsp.writeFile(audioPath, audioBuffer);
-                  writeProgress("Mixing audio…");
-
-                  // Mux: copy video stream + re-encode audio to AAC, stop at shortest stream
-                  await execFileAsync(
-                    "ffmpeg",
-                    [
-                      "-i", outputPath,
-                      "-i", audioPath,
-                      "-c:v", "copy",
-                      "-c:a", "aac",
-                      "-map", "0:v:0",
-                      "-map", "1:a:0",
-                      "-shortest",
-                      "-y",
-                      muxedPath,
-                    ],
-                    { timeout: 60_000 },
-                  );
-                  finalVideoPath = muxedPath;
-                }
+                // Mux: copy video stream + re-encode audio to AAC, stop at shortest stream
+                await execFileAsync(
+                  "ffmpeg",
+                  [
+                    "-i", outputPath,
+                    "-i", audioPath,
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-map", "0:v:0",
+                    "-map", "1:a:0",
+                    "-shortest",
+                    "-y",
+                    muxedPath,
+                  ],
+                  { timeout: 60_000 },
+                );
+                finalVideoPath = muxedPath;
               } catch (voiceErr) {
-                // Voiceover failure is non-fatal — fall back to silent video
-                console.error("Voiceover mux failed, using silent video:", voiceErr);
+                console.error("Voiceover mux failed; refusing to upload a silent video:", voiceErr);
+                return {
+                  error: "Voiceover unavailable — video is silent",
+                  voiceover_provider: "none" as const,
+                };
               }
             }
 
@@ -1274,7 +1382,7 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
               return { error: `Failed to create video URL: ${signError?.message ?? "unknown"}` };
             }
 
-            return { prompt, videoUrl: signed.signedUrl };
+            return { prompt, videoUrl: signed.signedUrl, voiceover_provider: voiceoverProvider };
           } finally {
             // Remove the entire temp dir (handles frames, silent video, voiceover, and muxed output)
             await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
