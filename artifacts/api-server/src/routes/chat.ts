@@ -116,12 +116,124 @@ export { generateSceneImage };
 
 const router = Router();
 
+const OPENAI_VOICES = {
+  alloy: "Balanced and versatile",
+  echo: "Clear and resonant",
+  fable: "Expressive and story-driven",
+  onyx: "Deep and authoritative",
+  nova: "Warm and energetic",
+  shimmer: "Bright and gentle",
+} as const;
+
+/** Curated built-in voices. The IDs are stable ElevenLabs public voice IDs. */
+const ELEVENLABS_VOICES = {
+  "21m00Tcm4TlvDq8ikWAM": {
+    name: "Rachel",
+    description: "Warm, professional, and conversational",
+  },
+  "pNInz6obpgDQGcFmaJgB": {
+    name: "Adam",
+    description: "Deep, confident, and authoritative",
+  },
+  "EXAVITQu4vr4xnSDxMaL": {
+    name: "Bella",
+    description: "Soft, friendly, and polished",
+  },
+  "ErXwobaYiN019PkySvjV": {
+    name: "Antoni",
+    description: "Well-rounded, clear, and engaging",
+  },
+  "TxGEqnHWrfWFTfGW9XjX": {
+    name: "Josh",
+    description: "Young, energetic, and dynamic",
+  },
+  "AZnzlk1XvdvUeBnXmlld": {
+    name: "Domi",
+    description: "Strong, expressive, and bold",
+  },
+} as const;
+
+const SPEAKING_STYLE_GUIDE = [
+  "warm and conversational",
+  "authoritative and assured",
+  "energetic and upbeat",
+  "calm and reassuring",
+  "cinematic and dramatic",
+  "playful and light",
+  "urgent and punchy",
+] as const;
+
+const OPENAI_VOICE_GUIDE = Object.entries(OPENAI_VOICES)
+  .map(([voice, description]) => `${voice} (${description})`)
+  .join(", ");
+const ELEVENLABS_VOICE_GUIDE = Object.entries(ELEVENLABS_VOICES)
+  .map(([voiceId, voice]) => `${voice.name} (${voice.description}; ID: ${voiceId})`)
+  .join(", ");
+
+function resolveElevenLabsVoice(voice?: string): {
+  voiceId: string;
+  requestedVoice: string | undefined;
+} {
+  const requestedVoice = voice?.trim() || undefined;
+  if (!requestedVoice) {
+    return { voiceId: "21m00Tcm4TlvDq8ikWAM", requestedVoice };
+  }
+
+  const curatedMatch = Object.entries(ELEVENLABS_VOICES).find(
+    ([voiceId, details]) =>
+      voiceId.toLowerCase() === requestedVoice.toLowerCase() ||
+      details.name.toLowerCase() === requestedVoice.toLowerCase(),
+  );
+  // Accept a user-supplied ElevenLabs voice ID too, while the prompt exposes
+  // a smaller curated set that is easier to choose from.
+  return { voiceId: curatedMatch?.[0] ?? requestedVoice, requestedVoice };
+}
+
+function getSpeakingStyleSettings(speakingStyle?: string): {
+  stability: number;
+  similarity_boost: number;
+  style: number;
+} {
+  const normalized = speakingStyle?.toLowerCase() ?? "";
+  if (normalized.includes("energetic") || normalized.includes("upbeat") || normalized.includes("urgent")) {
+    return { stability: 0.35, similarity_boost: 0.75, style: 0.55 };
+  }
+  if (normalized.includes("authoritative") || normalized.includes("assured")) {
+    return { stability: 0.72, similarity_boost: 0.8, style: 0.2 };
+  }
+  if (normalized.includes("calm") || normalized.includes("reassuring")) {
+    return { stability: 0.78, similarity_boost: 0.75, style: 0.1 };
+  }
+  if (normalized.includes("cinematic") || normalized.includes("dramatic")) {
+    return { stability: 0.5, similarity_boost: 0.78, style: 0.45 };
+  }
+  if (normalized.includes("playful") || normalized.includes("light")) {
+    return { stability: 0.42, similarity_boost: 0.72, style: 0.5 };
+  }
+  // Warm/conversational is the default and preserves the previous sound.
+  return { stability: 0.5, similarity_boost: 0.75, style: 0.25 };
+}
+
+function getOpenAiSpeakingInstructions(speakingStyle?: string): string | undefined {
+  const style = speakingStyle?.trim();
+  return style ? `Speak in a ${style} style. Keep the delivery natural and suited to a polished video voiceover.` : undefined;
+}
+
+export {
+  ELEVENLABS_VOICES,
+  OPENAI_VOICES,
+  getOpenAiSpeakingInstructions,
+  getSpeakingStyleSettings,
+  resolveElevenLabsVoice,
+};
+
 const SYSTEM = `You are Aura, a premium autonomous AI agent for designers, founders and engineers.
 
 You have real tools. Use them proactively instead of guessing:
 - web_search + fetch_url for anything current, factual, or link-based. Always cite sources as markdown links.
 - generate_image whenever a visual is requested. After it returns, embed the image with markdown: ![alt](imageUrl).
 - generate_video whenever someone asks for a video clip, reel, animation or moving visual. After it returns, embed with HTML: <video src="videoUrl" controls autoplay loop muted style="max-width:100%;border-radius:12px"></video>. When the user asks for an ad, reel, or any video with narration, always include a voiceover_text with the script dialogue — never leave it empty for ads.
+- For ads, branded videos, reels, or any narrated video, offer a concise voice choice before generating when the user has not specified one. Explain that the voice character and speaking style can be customized, then use the user's selection in generate_video. Use the provider-specific voice options included below. If the user does not care, choose a fitting option and state what you chose.
 - previs to create a full interactive pre-visualization animatic: script → per-scene images → timed MP4 the user can scrub through. Use whenever someone asks for a previs, animatic, shot preview, visual development, or to "see what the video will look like". After it returns, embed the video the same way as generate_video; the UI will automatically show the interactive scene strip.
 - generate_script to produce a structured video/ad/reel script with scenes and dialogue.
 - generate_captions to craft platform-optimised social captions for TikTok, Instagram and LinkedIn.
@@ -254,6 +366,14 @@ router.post("/", async (req: Request, res: Response) => {
     res.status(500).json({ error: "Missing AI integration configuration" });
     return;
   }
+  const voiceProviderPreamble = `
+
+Voiceover options for this request:
+- OpenAI voices: ${OPENAI_VOICE_GUIDE}.
+${process.env["ELEVENLABS_API_KEY"]
+  ? `- ElevenLabs curated voices: ${ELEVENLABS_VOICE_GUIDE}.`
+  : "- ElevenLabs is not configured, so only the OpenAI voices are available."}
+- Speaking styles: ${SPEAKING_STYLE_GUIDE.join(", ")}.`;
 
   const uiMessages = messages as UIMessage[];
 
@@ -807,7 +927,7 @@ Return ONLY valid JSON (no markdown fences):
 
     generate_video: tool({
       description:
-        "Generate a short AI video clip from a text prompt. Creates a real MP4 video by generating cinematic key-frame images and blending them together with smooth crossfade transitions. Optionally adds an AI voiceover narration to the video. Use whenever someone asks for a video, reel, clip, short film, or animated visual — especially ads, reels, or branded content where a voiceover would enhance the output. Returns a URL to the MP4 file.",
+        `Generate a short AI video clip from a text prompt. Creates a real MP4 video by generating cinematic key-frame images and blending them together with smooth crossfade transitions. Optionally adds an AI voiceover narration to the video. Use whenever someone asks for a video, reel, clip, short film, or animated visual — especially ads, reels, or branded content where a voiceover would enhance the output. Returns a URL to the MP4 file. When voiceover is requested, honor the selected voice and speaking style. OpenAI voice options: ${OPENAI_VOICE_GUIDE}. If ElevenLabs is active, use a curated voice name or ID from: ${ELEVENLABS_VOICE_GUIDE}.`,
       inputSchema: z.object({
         prompt: z.string().describe("Describe the video scene or concept to generate"),
         style: z
@@ -822,8 +942,20 @@ Return ONLY valid JSON (no markdown fences):
           .describe(
             "Script text to synthesize as an AI voiceover narration and mix into the video audio track. Provide this whenever the user asks for an ad, reel, or video with narration or voice.",
           ),
+        voice: z
+          .string()
+          .optional()
+          .describe(
+            `Voice character for the narration. OpenAI values: ${Object.keys(OPENAI_VOICES).join(", ")}. With ElevenLabs, use a curated name (Rachel, Adam, Bella, Antoni, Josh, Domi), its voice ID, or another voice ID available to the account.`,
+          ),
+        speaking_style: z
+          .string()
+          .optional()
+          .describe(
+            `How the narration should be delivered, such as ${SPEAKING_STYLE_GUIDE.join(", ")}. Use the user's wording when they request a different direction.`,
+          ),
       }),
-      execute: async ({ prompt, style, voiceover_text }) => {
+      execute: async ({ prompt, style, voiceover_text, voice, speaking_style }) => {
         try {
           const styleHint = style ? ` Visual style: ${style}.` : "";
           const frameCount = 3;
@@ -1044,9 +1176,9 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
                 let audioBuffer: Buffer | null = null;
 
                 if (elevenLabsKey) {
-                  // ElevenLabs TTS — Rachel voice (professional, warm)
+                  const { voiceId } = resolveElevenLabsVoice(voice);
                   const elRes = await fetch(
-                    "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
+                    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`,
                     {
                       method: "POST",
                       headers: {
@@ -1057,7 +1189,7 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
                       body: JSON.stringify({
                         text: voiceover_text,
                         model_id: "eleven_turbo_v2_5",
-                        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+                        voice_settings: getSpeakingStyleSettings(speaking_style),
                       }),
                     },
                   );
@@ -1067,7 +1199,13 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
                 }
 
                 if (!audioBuffer) {
-                  // OpenAI TTS fallback (alloy voice)
+                  // OpenAI TTS fallback. gpt-4o-mini-tts supports delivery
+                  // instructions while retaining the familiar voice choices.
+                  const openAiVoice =
+                    voice && Object.prototype.hasOwnProperty.call(OPENAI_VOICES, voice)
+                      ? voice
+                      : "alloy";
+                  const speakingInstructions = getOpenAiSpeakingInstructions(speaking_style);
                   const ttsRes = await fetch(`${openaiBaseUrl}/audio/speech`, {
                     method: "POST",
                     headers: {
@@ -1075,10 +1213,13 @@ Make each prompt vivid, specific, and optimised for AI image generation. Include
                       Authorization: `Bearer ${openaiApiKey}`,
                     },
                     body: JSON.stringify({
-                      model: "tts-1",
+                      model: speaking_style?.trim() ? "gpt-4o-mini-tts" : "tts-1",
                       input: voiceover_text,
-                      voice: "alloy",
+                      voice: openAiVoice,
                       response_format: "mp3",
+                      ...(speakingInstructions
+                        ? { instructions: speakingInstructions }
+                        : {}),
                     }),
                   });
                   if (ttsRes.ok) {
@@ -1355,7 +1496,7 @@ Use 3-5 scenes. Be vivid and specific. Assign realistic durations (2-6 s each fo
 
       const result = streamText({
         model,
-        system: SYSTEM + memoryPreamble,
+        system: SYSTEM + voiceProviderPreamble + memoryPreamble,
         messages: modelMessages,
         tools,
         stopWhen: stepCountIs(50),
