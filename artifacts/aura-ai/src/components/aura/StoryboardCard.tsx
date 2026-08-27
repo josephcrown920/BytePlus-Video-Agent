@@ -9,6 +9,12 @@ import {
 } from "@/lib/export";
 import { cinematicSceneRole, CINEMATIC_ROLE_STYLES } from "@/lib/video-agent-skills";
 import { createShareLink } from "@/lib/share";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type Scene = {
   scene: number;
@@ -65,6 +71,7 @@ function SceneFrame({
   const [currentUrl, setCurrentUrl] = useState<string | null>(scene.imageUrl);
   const [hovered, setHovered] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [editPrompt, setEditPrompt] = useState(scene.image_prompt);
   const [editLoading, setEditLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -147,15 +154,25 @@ function SceneFrame({
 
         {/* Actual image */}
         {currentUrl && (
-          <img
-            key={currentUrl}
-            src={currentUrl}
-            alt={scene.title}
-            loading="lazy"
-            className={`size-full object-cover transition-opacity duration-300 ${isLoaded ? "opacity-100" : "opacity-0"}`}
-            onLoad={() => setImgState({ status: "loaded" })}
-            onError={() => setImgState({ status: "error" })}
-          />
+          <button
+            type="button"
+            onClick={() => {
+              if (isLoaded) setPreviewOpen(true);
+            }}
+            disabled={!isLoaded}
+            aria-label={`View ${scene.title} full size`}
+            className="absolute inset-0 cursor-zoom-in disabled:cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+          >
+            <img
+              key={currentUrl}
+              src={currentUrl}
+              alt={scene.title}
+              loading="lazy"
+              className={`size-full object-cover transition-opacity duration-300 ${isLoaded ? "opacity-100" : "opacity-0"}`}
+              onLoad={() => setImgState({ status: "loaded" })}
+              onError={() => setImgState({ status: "error" })}
+            />
+          </button>
         )}
 
         {/* Error / retry state */}
@@ -206,10 +223,33 @@ function SceneFrame({
         )}
 
         {/* Frame label overlay */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
           <span className="text-[10px] font-bold text-white/90">Frame {scene.scene}</span>
         </div>
       </div>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-h-[90vh] max-w-5xl gap-0 overflow-y-auto border-white/10 bg-surface p-0">
+          <div className="grid min-h-0 gap-0 md:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="flex min-h-[260px] items-center justify-center bg-black/20 p-4 sm:p-8">
+              <img
+                src={currentUrl ?? ""}
+                alt={scene.title}
+                className="max-h-[65vh] w-full rounded-xl object-contain shadow-2xl"
+              />
+            </div>
+            <div className="flex flex-col justify-center border-t border-white/10 p-5 md:border-l md:border-t-0 md:p-7">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+                Frame {scene.scene}
+              </p>
+              <DialogTitle className="pr-6 text-xl leading-tight">{scene.title}</DialogTitle>
+              <DialogDescription className="mt-3 text-sm leading-relaxed">
+                {scene.description}
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Inline prompt editor */}
       {editOpen && (
