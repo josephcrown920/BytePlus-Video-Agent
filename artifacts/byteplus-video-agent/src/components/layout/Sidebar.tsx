@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useWorkspace } from "@/lib/store";
-import { Activity, Clapperboard, Layers, Library, Settings, Image as ImageIcon, Video, MonitorPlay } from "lucide-react";
+import { Activity, Clapperboard, Layers, Library, Image as ImageIcon, Video, MonitorPlay, PanelsTopLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 
@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { name: "Image Generator", path: "/image-generator", icon: ImageIcon, badge: "Seedream" },
   { name: "Video Generator", path: "/video-generator", icon: Video, badge: "Seedance" },
   { name: "Multi-Shot", path: "/multi-shot", icon: Layers },
+  { name: "Visual Boards", path: "/boards", icon: PanelsTopLeft, badge: "New" },
   { name: "Production Bible", path: "/bible", icon: Library },
   { name: "Pipeline", path: "/pipeline", icon: MonitorPlay },
   { name: "Drafts", path: "/drafts", icon: Clapperboard },

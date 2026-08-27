@@ -11,6 +11,7 @@ import MultiShot from "@/pages/MultiShot";
 import ProductionBible from "@/pages/ProductionBible";
 import Pipeline from "@/pages/Pipeline";
 import Drafts from "@/pages/Drafts";
+import VisualBoards from "@/pages/VisualBoards";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ function Router() {
         <Route path="/bible" component={ProductionBible} />
         <Route path="/pipeline" component={Pipeline} />
         <Route path="/drafts" component={Drafts} />
+        <Route path="/boards" component={VisualBoards} />
         <Route component={NotFound} />
       </Switch>
     </Shell>

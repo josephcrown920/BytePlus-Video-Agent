@@ -107,7 +107,9 @@ export default function Pipeline() {
                              <Button size="sm" variant="ghost" className="gap-2" onClick={() => openProject(task.projectId!)}><Pencil className="h-4 w-4" /> Edit</Button>
                            </Link>
                          )}
-                         <Button size="icon" variant="ghost" aria-label="Remove saved plan" onClick={() => removeTask(task.id)}><Trash2 className="h-4 w-4" /></Button>
+                         <Button size="icon" variant="ghost" aria-label="Remove saved plan" onClick={() => {
+                           if (window.confirm("Delete this saved offline plan? This cannot be undone.")) removeTask(task.id);
+                         }}><Trash2 className="h-4 w-4" /></Button>
                        </div>
                       {task.status === 'processing' && (
                         <div className="w-32 h-1 bg-secondary rounded-full overflow-hidden">

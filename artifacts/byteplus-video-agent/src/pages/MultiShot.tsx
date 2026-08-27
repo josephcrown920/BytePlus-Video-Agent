@@ -20,22 +20,23 @@ export default function MultiShot() {
   const duration = activeProject.shots.reduce((sum, shot) => sum + shot.duration, 0);
 
   const savePlan = () => {
-    const ready = activeProject.shots.filter(shot => shot.prompt.trim());
-    if (!ready.length) {
-      toast({ title: "Add a shot prompt first", variant: "destructive" });
+    const incompleteCount = activeProject.shots.filter(shot => !shot.prompt.trim()).length;
+    if (!activeProject.shots.length || incompleteCount > 0) {
+      toast({ title: "Complete every shot first", description: `${incompleteCount || 1} shot${incompleteCount === 1 ? "" : "s"} still need a prompt.`, variant: "destructive" });
       return;
     }
+    const snapshot = activeProject.shots.map(shot => ({ ...shot, status: "requires_api" as const }));
     workspace.addTask({
       type: "multi-shot",
-      prompt: `${activeProject.name}: ${ready.length}-shot production plan`,
+      prompt: `${activeProject.name}: ${snapshot.length}-shot production plan`,
       metadata: {
         projectName: activeProject.name,
         duration: `${duration}s`,
-        ratio: ready[0].ratio,
-        shots: ready.map(shot => ({ ...shot })),
+        ratio: snapshot[0].ratio,
+        shots: snapshot,
       },
     });
-    ready.forEach(shot => workspace.updateShot(shot.id, { status: "requires_api" }));
+    snapshot.forEach(shot => workspace.updateShot(shot.id, { status: "requires_api" }));
     toast({ title: "Offline batch plan saved", description: "Connect a server-side BytePlus API later to execute it.", variant: "api" });
   };
 
@@ -95,7 +96,9 @@ export default function MultiShot() {
                       <Button variant="ghost" size="icon" aria-label={`Move shot ${index + 1} up`} disabled={index === 0} onClick={() => workspace.moveShot(shot.id, -1)}><ArrowUp className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" aria-label={`Move shot ${index + 1} down`} disabled={index === activeProject.shots.length - 1} onClick={() => workspace.moveShot(shot.id, 1)}><ArrowDown className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" aria-label={`Duplicate shot ${index + 1}`} onClick={() => workspace.duplicateShot(shot.id)}><Copy className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" aria-label={`Delete shot ${index + 1}`} onClick={() => workspace.removeShot(shot.id)}><Trash2 className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" aria-label={`Delete shot ${index + 1}`} onClick={() => {
+                        if (window.confirm(`Delete shot ${index + 1}? This cannot be undone.`)) workspace.removeShot(shot.id);
+                      }}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </div>
                   <div><label htmlFor={`prompt-${shot.id}`} className="mb-2 block text-sm font-medium">Shot prompt</label><Textarea id={`prompt-${shot.id}`} value={shot.prompt} onChange={e => workspace.updateShot(shot.id, { prompt: e.target.value })} className="min-h-24 bg-black/30" placeholder="Describe this shot…" /></div>

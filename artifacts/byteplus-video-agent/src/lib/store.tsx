@@ -147,6 +147,23 @@ function isSettings(value: unknown): value is GeneratorSettings {
   return typeof settings.prompt === "string" && typeof settings.ratio === "string";
 }
 
+function isImageSettings(value: unknown): value is GeneratorSettings {
+  if (!isSettings(value)) return false;
+  const settings = value as GeneratorSettings;
+  return typeof settings.style === "string" && (settings.negativePrompt === undefined || typeof settings.negativePrompt === "string");
+}
+
+function isVideoSettings(value: unknown): value is GeneratorSettings {
+  if (!isSettings(value)) return false;
+  const settings = value as GeneratorSettings;
+  return typeof settings.duration === "string"
+    && typeof settings.camera === "string"
+    && typeof settings.motion === "number"
+    && Number.isFinite(settings.motion)
+    && settings.motion >= 0
+    && settings.motion <= 100;
+}
+
 function isShot(value: unknown): value is Shot {
   if (!value || typeof value !== "object") return false;
   const shot = value as Partial<Shot>;
@@ -252,7 +269,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const updateGeneratorSettings = (kind: PresetKind, settings: Partial<GeneratorSettings>) =>
     mutateProject(activeProject.id, p => ({ ...p, [kind === "image" ? "imageSettings" : "videoSettings"]: { ...p[kind === "image" ? "imageSettings" : "videoSettings"], ...settings } }));
   const addShot = (type: Shot["type"]) => mutateProject(activeProject.id, p => ({ ...p, shots: [...p.shots, { id: uid(), type, prompt: "", duration: type === "video" ? 4 : 2, camera: "static", ratio: "16:9", continuityNotes: "", status: "draft" }] }));
-  const updateShot = (id: string, updates: Partial<Shot>) => mutateProject(activeProject.id, p => ({ ...p, shots: p.shots.map(s => s.id === id ? { ...s, ...updates, status: (updates.prompt ?? s.prompt).trim() ? "ready" : "draft" } : s) }));
+  const updateShot = (id: string, updates: Partial<Shot>) => mutateProject(activeProject.id, p => ({
+    ...p,
+    shots: p.shots.map(s => s.id === id
+      ? { ...s, ...updates, status: updates.status ?? (updates.prompt !== undefined ? (updates.prompt.trim() ? "ready" : "draft") : s.status) }
+      : s),
+  }));
   const duplicateShot = (id: string) => mutateProject(activeProject.id, p => {
     const index = p.shots.findIndex(s => s.id === id);
     if (index < 0) return p;
@@ -294,6 +316,22 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const workspacePayload = data.kind === "byteplus-workspace";
     if (workspacePayload && (!Array.isArray(data.tasks) || !data.tasks.every(isTask) || !Array.isArray(data.presets) || !data.presets.every(isPreset) || !Array.isArray(data.characters) || !data.characters.every(isCharacter))) {
       throw new Error("The export contains malformed workspace data.");
+    }
+    if (workspacePayload) {
+      const projectIds = new Set(imported.map(project => project.id));
+      const tasks = data.tasks as GenerationTask[];
+      const invalidTask = tasks.some(task => {
+        if (typeof task.projectId !== "string" || !projectIds.has(task.projectId)) return true;
+        if (task.type === "image") return !isImageSettings(task.metadata);
+        if (task.type === "video") return !isVideoSettings(task.metadata);
+        if (task.type === "upscale") return !isSettings(task.metadata);
+        return !task.metadata
+          || typeof task.metadata.projectName !== "string"
+          || !Array.isArray(task.metadata.shots)
+          || task.metadata.shots.length === 0
+          || !task.metadata.shots.every(isShot);
+      });
+      if (invalidTask) throw new Error("The export contains an invalid or orphaned saved plan.");
     }
     const idMap = new Map<string, string>();
     const normalized = imported.map(project => {
