@@ -5,6 +5,9 @@ import astronautShot from '@assets/generated_images/shot-astronaut.jpg';
 import desertShot from '@assets/generated_images/shot-desert.jpg';
 import charElara from '@assets/generated_images/char-elara.jpg';
 import charKell from '@assets/generated_images/char-kell.jpg';
+import styleNeonNoir from '@assets/generated_images/style-neon-noir.jpg';
+import locationOrbitalStation from '@assets/generated_images/location-orbital-station.jpg';
+import renderFinalPlate from '@assets/generated_images/render-final-plate.jpg';
 
 export type JobStatus = 'queued' | 'rendering' | 'completed' | 'failed';
 
@@ -14,6 +17,7 @@ export interface RenderJob {
   status: JobStatus;
   progress: number;
   createdAt: Date;
+  sourceFrame: string;
   resultImage?: string;
   duration?: string;
 }
@@ -97,10 +101,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const [bibleAssets] = useState<BibleAsset[]>([
     { id: 'b1', name: 'Elara Vane', type: 'character', imageUrl: charElara, tags: ['Protagonist', 'Sci-fi'] },
     { id: 'b2', name: 'Kell', type: 'character', imageUrl: charKell, tags: ['Smuggler', 'Supporting'] },
+    { id: 'b3', name: 'Neon Noir Grade', type: 'style', imageUrl: styleNeonNoir, tags: ['Color Script', 'Teal & Magenta'] },
+    { id: 'b4', name: 'Orbital Station Omega', type: 'location', imageUrl: locationOrbitalStation, tags: ['Interior', 'Zero-G'] },
   ]);
 
   const [queue, setQueue] = useState<RenderJob[]>([
-    { id: 'q1', prompt: 'High speed chase through asteroid field', status: 'completed', progress: 100, createdAt: new Date(Date.now() - 3600000), duration: '45s' },
+    { id: 'q1', prompt: 'High speed chase through asteroid field', status: 'completed', progress: 100, createdAt: new Date(Date.now() - 3600000), sourceFrame: desertShot, resultImage: renderFinalPlate, duration: '45s' },
   ]);
   const [drafts, setDrafts] = useState<Draft[]>(() => storedProject?.drafts ?? [
     {
@@ -126,12 +132,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   }, [shots, drafts]);
 
   const addJob = useCallback((prompt: string) => {
+    const sourcePool = [cyberpunkShot, astronautShot, desertShot];
     const newJob: RenderJob = {
       id: Math.random().toString(36).substring(7),
       prompt,
       status: 'queued',
       progress: 0,
       createdAt: new Date(),
+      sourceFrame: sourcePool[Math.floor(Math.random() * sourcePool.length)],
     };
     
     setQueue(prev => [newJob, ...prev]);
@@ -150,7 +158,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
             ...j, 
             status: 'completed', 
             progress: 100,
-            resultImage: cyberpunkShot, // Dummy result
+            resultImage: renderFinalPlate,
             duration: '1m 12s'
           } : j));
         } else {
