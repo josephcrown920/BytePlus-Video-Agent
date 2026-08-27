@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/byteplus-video-agent/"
+title = "BytePlus Video Agent"
+description = "A cinematic AI production studio for generating Seedream images, Seedance videos, multi-shot sequences, drafts, and continuity-managed production pipelines from one visual web interface."
+version = "1.0.0"
+id = "artifacts/byteplus-video-agent"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/byteplus-video-agent/" ]
+localPort = 18309
+
+[services.development]
+run = "pnpm --filter @workspace/byteplus-video-agent run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/byteplus-video-agent", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/byteplus-video-agent/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18309"
+BASE_PATH = "/byteplus-video-agent/"

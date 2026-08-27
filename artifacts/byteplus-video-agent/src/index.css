@@ -1,0 +1,153 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --font-sans: 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
+:root {
+  --background: 240 10% 4%;
+  --foreground: 0 0% 98%;
+
+  --card: 240 10% 6%;
+  --card-foreground: 0 0% 95%;
+  --card-border: 240 10% 12%;
+
+  --popover: 240 10% 6%;
+  --popover-foreground: 0 0% 95%;
+  --popover-border: 240 10% 12%;
+
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 10% 12%;
+  --secondary-foreground: 0 0% 98%;
+
+  --muted: 240 10% 12%;
+  --muted-foreground: 240 5% 65%;
+
+  --accent: 217 91% 60%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 240 10% 15%;
+  --input: 240 10% 12%;
+  --ring: 217 91% 60%;
+
+  --radius: 0.25rem;
+}
+
+.dark {
+  --background: 240 10% 4%;
+  --foreground: 0 0% 98%;
+
+  --card: 240 10% 6%;
+  --card-foreground: 0 0% 95%;
+  --card-border: 240 10% 12%;
+
+  --popover: 240 10% 6%;
+  --popover-foreground: 0 0% 95%;
+  --popover-border: 240 10% 12%;
+
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 10% 12%;
+  --secondary-foreground: 0 0% 98%;
+
+  --muted: 240 10% 12%;
+  --muted-foreground: 240 5% 65%;
+
+  --accent: 217 91% 60%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 240 10% 15%;
+  --input: 240 10% 12%;
+  --ring: 217 91% 60%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground overflow-x-hidden;
+  }
+}
+
+/* Custom scrollbar for cinematic UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+.glass-panel {
+  background: rgba(15, 15, 17, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cinematic-grid {
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+}
+
+.text-glow {
+  text-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
