@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { CINEMATIC_ROLE_COLORS } from '@/lib/cinematic';
 import { copyShareLink } from '@/lib/share';
+import { useAuth } from '@/context/AuthContext';
 
 type ScriptScene = {
   scene: number;
@@ -23,14 +24,49 @@ type ScriptOutput = {
   hookWarning?: boolean;
 };
 
+/** Result shape returned by POST /api/video-agent/regenerate-hook. */
+type RegenerateHookResponse = {
+  hook: string;
+  scene: { description: string; dialogue?: string };
+  hookWarning: boolean;
+};
+
+function getApiBaseUrl(): string {
+  const domain = process.env.EXPO_PUBLIC_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  if (!domain) throw new Error('Server connection is unavailable right now.');
+  return `https://${domain}`;
+}
+
 export function ScriptCard({ result }: { result: unknown }) {
   const colors = useColors();
+  const { getToken } = useAuth();
   const [sharing, setSharing] = useState(false);
-  const script = result as ScriptOutput;
+  const [regeneratingHook, setRegeneratingHook] = useState(false);
+  const [hookOverride, setHookOverride] = useState<{
+    hook?: string;
+    scene0: { description: string; dialogue?: string };
+    hookWarning: boolean;
+  } | null>(null);
+  const original = result as ScriptOutput;
 
-  if (!script?.title || !Array.isArray(script.scenes) || script.scenes.length === 0) {
+  if (!original?.title || !Array.isArray(original.scenes) || original.scenes.length === 0) {
     return null;
   }
+
+  // Apply the locally-regenerated hook (if any) on top of the original result,
+  // so the card re-renders immediately without needing to touch the message store.
+  const script: ScriptOutput = hookOverride
+    ? {
+        ...original,
+        hook: hookOverride.hook ?? original.hook,
+        hookWarning: hookOverride.hookWarning,
+        scenes: original.scenes.map((scene, i) =>
+          i === 0
+            ? { ...scene, description: hookOverride.scene0.description, dialogue: hookOverride.scene0.dialogue }
+            : scene,
+        ),
+      }
+    : original;
 
   const hookColors = CINEMATIC_ROLE_COLORS.Hook;
   const closeColors = CINEMATIC_ROLE_COLORS.Close;
@@ -54,6 +90,44 @@ export function ScriptCard({ result }: { result: unknown }) {
       );
     } finally {
       setSharing(false);
+    }
+  };
+
+  const handleRegenerateHook = async () => {
+    setRegeneratingHook(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Please sign in to regenerate the hook.');
+
+      const baseUrl = getApiBaseUrl();
+      const currentScene0 = script.scenes[0];
+      const res = await fetch(`${baseUrl}/api/video-agent/regenerate-hook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          topic: script.title,
+          style: script.format,
+          currentHook: script.hook,
+          currentDescription: currentScene0?.description,
+          remainingScenes: script.scenes.slice(1).map(s => ({ description: s.description, dialogue: s.dialogue })),
+        }),
+      });
+
+      const data = (await res.json()) as RegenerateHookResponse & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? 'Could not regenerate the hook.');
+
+      setHookOverride({
+        hook: data.hook,
+        scene0: data.scene,
+        hookWarning: data.hookWarning,
+      });
+    } catch (error) {
+      Alert.alert(
+        'Could not regenerate hook',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setRegeneratingHook(false);
     }
   };
 
@@ -123,11 +197,33 @@ export function ScriptCard({ result }: { result: unknown }) {
 
               <View style={styles.sceneBody}>
                 {isFirst && hasHookWarning && (
-                  <View style={[styles.hookWarning, { backgroundColor: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.4)' }]}>
-                    <Feather name="alert-triangle" size={11} color="#ca8a04" />
-                    <Text style={[styles.hookWarningText, { color: '#ca8a04' }]}>
-                      Opening may not be a strong sensory hook — consider regenerating
-                    </Text>
+                  <View style={[styles.hookWarningBox, { backgroundColor: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.4)' }]}>
+                    <View style={styles.hookWarningRow}>
+                      <Feather name="alert-triangle" size={11} color="#ca8a04" />
+                      <Text style={[styles.hookWarningText, { color: '#ca8a04' }]}>
+                        Opening may not be a strong sensory hook — consider regenerating
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      accessibilityLabel="Regenerate hook"
+                      accessibilityHint="Generates a new opening scene and replaces this one"
+                      disabled={regeneratingHook}
+                      onPress={() => void handleRegenerateHook()}
+                      style={[
+                        styles.regenerateButton,
+                        { borderColor: 'rgba(202,138,4,0.5)' },
+                        regeneratingHook && styles.regenerateButtonDisabled,
+                      ]}
+                    >
+                      {regeneratingHook ? (
+                        <ActivityIndicator size="small" color="#ca8a04" />
+                      ) : (
+                        <Feather name="refresh-cw" size={12} color="#ca8a04" />
+                      )}
+                      <Text style={[styles.regenerateButtonText, { color: '#ca8a04' }]}>
+                        {regeneratingHook ? 'Regenerating…' : 'Regenerate hook'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
                 <Text style={[styles.sceneDesc, { color: colors.foreground }]}>
@@ -286,19 +382,39 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: 'Inter_400Regular',
   },
-  hookWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
+  hookWarningBox: {
+    gap: 8,
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 5,
+  },
+  hookWarningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   hookWarningText: {
     flex: 1,
     fontSize: 11,
     fontFamily: 'Inter_400Regular',
     lineHeight: 15,
+  },
+  regenerateButton: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  regenerateButtonDisabled: {
+    opacity: 0.6,
+  },
+  regenerateButtonText: {
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
   },
 });

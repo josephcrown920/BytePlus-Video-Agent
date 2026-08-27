@@ -305,6 +305,130 @@ function availableLabel(id: string): string {
   return m[id] ?? id;
 }
 
+// ── Regenerate just the hook (Scene 0) ────────────────────────────────────────
+
+const HookSceneSchema = z.object({
+  /** One-sentence sensory shock — the exact 0-3 s opening image or sound. */
+  hook: z.string(),
+  /** Detailed cinematic visual description of the opening scene only. */
+  description: z.string(),
+  /** Voiceover or spoken line for the opening scene, empty string if none. */
+  dialogue: z.string().optional(),
+});
+
+const HOOK_ONLY_SYSTEM = `You are a professional video scriptwriter and creative director for Aura, a premium AI content studio.
+You are rewriting ONLY the opening Sensory Hook scene (0-3 s) of an existing video script — the rest of the script is already final and must not be referenced as something you are changing.
+
+## SENSORY HOOK RULES (mandatory)
+The opening must be a sensory shock — a visual or auditory provocation that stops the scroll in under one second.
+Techniques: unexpected contrast, visceral close-up, fast cut on beat, a bold question, an unresolved action.
+Do NOT open with a logo, a title card, a wide establishing shot, a fade-in, text overlay, or any form of introduction.
+
+Return ONLY a JSON object with this exact structure:
+{
+  "hook": "one-sentence sensory shock — the exact opening image or sound that stops the scroll",
+  "description": "detailed cinematic visual description of just the opening scene: what the camera sees, lighting, motion, composition, color grade",
+  "dialogue": "voiceover or spoken line for the opening scene (empty string if none)"
+}
+Return ONLY the JSON object.`;
+
+// POST /api/video-agent/regenerate-hook
+// Regenerates only the opening hook scene of an existing script in isolation,
+// so a weak-hook warning can be resolved with a single tap instead of
+// restarting the whole script.
+router.post("/regenerate-hook", async (req: Request, res: Response) => {
+  const userId = await requireAuth(req, res);
+  if (!userId) return;
+
+  const { topic, style, currentHook, currentDescription, remainingScenes } = req.body as {
+    topic: string;
+    style?: string;
+    currentHook?: string;
+    currentDescription?: string;
+    remainingScenes?: Array<{ description?: string; dialogue?: string }>;
+  };
+
+  if (!topic || typeof topic !== "string") {
+    res.status(400).json({ error: "Missing topic" });
+    return;
+  }
+
+  const narrativeContext = (remainingScenes ?? [])
+    .slice(0, 6)
+    .filter((s) => (s.description ?? "").trim().length > 0)
+    .map((s, i) => `Scene ${i + 2}: ${s.description}`)
+    .join("\n");
+
+  const baseUserMessage = `Video topic/title: ${topic}
+Visual style: ${style ?? "cinematic"}
+${narrativeContext ? `\nThe rest of the script already exists and must not change. It continues from your new opening:\n${narrativeContext}\n` : ""}
+${currentDescription ? `The current opening scene reads as weak and needs to be replaced:\n"${currentDescription}"\nDo not repeat this opener — make the new one genuinely visceral and sensory.` : ""}
+
+Write a brand-new opening Sensory Hook scene (0-3 s) that leads naturally into the rest of the script above.`;
+
+  function correctionMessage(badDescription: string): string {
+    return `${baseUserMessage}
+
+CORRECTION REQUIRED: Your previous draft opened with a prohibited opener:
+"${badDescription.slice(0, 200)}"
+
+This violates the Cinematic Viralist blueprint. The opening MUST be a genuine 0-3 second sensory shock — a visceral visual or auditory provocation that stops the scroll instantly. It must NOT be a title card, logo, establishing shot, fade-in, text overlay, or any form of introduction.
+
+Replace it with a concrete, sensory, action-first image: a close-up, an unexpected contrast, a fast cut, or a single arresting frame. Regenerate now with this correction applied.`;
+  }
+
+  async function runHookGeneration(userMessage: string) {
+    const gateway = getGateway();
+    const { object } = await generateObject({
+      model: gateway("gpt-5.6-terra") as unknown as LanguageModel,
+      system: HOOK_ONLY_SYSTEM,
+      prompt: userMessage,
+      schema: HookSceneSchema,
+    });
+    return object;
+  }
+
+  try {
+    let draft = await runHookGeneration(baseUserMessage);
+    let hookWeak = isWeakHook(draft.description, draft.hook);
+
+    if (hookWeak) {
+      console.warn(
+        "regenerate-hook: draft failed hook-quality check — retrying with correction prompt. " +
+        `description="${draft.description.slice(0, 120)}"`
+      );
+      try {
+        const retry = await runHookGeneration(correctionMessage(draft.description));
+        const retryStillWeak = isWeakHook(retry.description, retry.hook);
+        draft = retry;
+        hookWeak = retryStillWeak;
+        if (retryStillWeak) {
+          console.warn(
+            "regenerate-hook: correction retry also failed hook-quality check — reporting hookWarning=true. " +
+            `description="${retry.description.slice(0, 120)}"`
+          );
+        }
+      } catch (retryErr) {
+        // Retry call itself failed — surface the first draft with a warning still attached.
+        console.error("regenerate-hook: correction retry error:", retryErr instanceof Error ? retryErr.message : retryErr);
+      }
+    }
+
+    res.json({
+      hook: draft.hook,
+      scene: {
+        description: draft.description,
+        dialogue: draft.dialogue ?? "",
+      },
+      hookWarning: hookWeak,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Hook regeneration failed";
+    console.error("regenerate-hook error:", msg);
+    res.status(502).json({ error: msg });
+  }
+});
+
 // POST /api/video-agent/generate-frame — uses Pollinations.ai (free, no key needed)
 router.post("/generate-frame", async (req: Request, res: Response) => {
   const userId = await requireAuth(req, res);
