@@ -1,131 +1,116 @@
 import { useState } from "react";
+import { ArrowDown, ArrowUp, Copy, Download, ImageIcon, ListVideo, Plus, Trash2, Video, Wand2 } from "lucide-react";
+import { useWorkspace } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Plus, ListVideo, GripVertical, Settings2, Play, Wand2 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
-interface Shot {
-  id: string;
-  type: 'image' | 'video';
-  prompt: string;
-  duration?: number;
-}
+const ratios = ["16:9", "9:16", "1:1"].map(value => ({ label: value, value }));
+const cameras = ["static", "pan_right", "pan_left", "zoom_in", "zoom_out"].map(value => ({ label: value.replace("_", " "), value }));
 
 export default function MultiShot() {
+  const workspace = useWorkspace();
+  const { activeProject } = workspace;
   const { toast } = useToast();
-  const [shots, setShots] = useState<Shot[]>([
-    { id: '1', type: 'image', prompt: 'Establishing shot of a neon-lit cyberpunk city alleyway.' },
-    { id: '2', type: 'video', prompt: 'Camera slowly pans down to reveal a figure in a trenchcoat.', duration: 4 },
-  ]);
+  const [selectedId, setSelectedId] = useState(activeProject.shots[0]?.id ?? "");
+  const duration = activeProject.shots.reduce((sum, shot) => sum + shot.duration, 0);
 
-  const addShot = (type: 'image' | 'video') => {
-    setShots([...shots, { 
-      id: Math.random().toString(), 
-      type, 
-      prompt: '',
-      duration: type === 'video' ? 4 : undefined
-    }]);
-  };
-
-  const handleGenerateAll = () => {
-    toast({
-      title: "Sequence Queued",
-      description: `Sent ${shots.length} shots to pipeline.`,
-      variant: "api"
+  const savePlan = () => {
+    const ready = activeProject.shots.filter(shot => shot.prompt.trim());
+    if (!ready.length) {
+      toast({ title: "Add a shot prompt first", variant: "destructive" });
+      return;
+    }
+    workspace.addTask({
+      type: "multi-shot",
+      prompt: `${activeProject.name}: ${ready.length}-shot production plan`,
+      metadata: {
+        projectName: activeProject.name,
+        duration: `${duration}s`,
+        ratio: ready[0].ratio,
+        shots: ready.map(shot => ({ ...shot })),
+      },
     });
+    ready.forEach(shot => workspace.updateShot(shot.id, { status: "requires_api" }));
+    toast({ title: "Offline batch plan saved", description: "Connect a server-side BytePlus API later to execute it.", variant: "api" });
   };
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden">
-      {/* Top Bar */}
-      <div className="h-auto md:h-14 py-3 md:py-0 border-b border-border bg-card/30 flex flex-col md:flex-row items-start md:items-center justify-between px-4 shrink-0 gap-3 md:gap-0">
-        <div className="flex items-center gap-3">
-          <ListVideo className="w-5 h-5 text-primary" />
-          <h1 className="font-semibold tracking-tight text-sm">Sequence Editor</h1>
-          <div className="hidden md:block h-4 w-px bg-border mx-2" />
-          <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
-            {shots.length} Shots
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          <Button variant="outline" size="sm" onClick={() => addShot('image')} className="flex-1 md:flex-none h-8 text-xs">
-            + Image
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => addShot('video')} className="flex-1 md:flex-none h-8 text-xs">
-            + Video
-          </Button>
-          <Button variant="cinematic" size="sm" onClick={handleGenerateAll} className="w-full md:w-auto h-8 text-xs gap-2 md:ml-4">
-            <Wand2 className="w-3 h-3" />
-            Generate All
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-        {/* Timeline Area (Visual representation) */}
-        <div className="shrink-0 h-32 md:h-auto md:flex-1 bg-black/40 flex flex-col relative overflow-hidden">
-          <div className="h-8 md:h-10 border-b border-border/50 bg-black/60 flex items-center px-4 font-mono text-[9px] md:text-[10px] text-muted-foreground">
-            <div className="flex-1 flex justify-between">
-              <span>00:00</span>
-              <span>00:04</span>
-              <span>00:08</span>
-              <span>00:12</span>
-            </div>
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      <header className="flex shrink-0 flex-col gap-3 border-b border-border bg-card/30 p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <ListVideo className="h-5 w-5 shrink-0 text-primary" />
+          <div className="min-w-0">
+            <h1 className="truncate font-semibold">{activeProject.name}</h1>
+            <p className="text-sm text-muted-foreground">{activeProject.shots.length} shots · {duration}s · Autosaved locally</p>
           </div>
-          
-          <div className="flex-1 p-4 md:p-8 flex items-center justify-center relative">
-            {/* Mock Timeline UI */}
-            <div className="absolute inset-x-4 md:inset-x-8 top-1/2 -translate-y-1/2 h-16 md:h-24 bg-card/50 border border-border/50 rounded-sm flex overflow-hidden">
-              {shots.map((shot, i) => (
-                <div key={shot.id} className="h-full border-r border-border/50 relative group cursor-pointer" style={{ width: shot.type === 'video' ? '40%' : '20%' }}>
-                  <div className="absolute inset-0 bg-primary/5 group-hover:bg-primary/20 transition-colors" />
-                  <div className="absolute top-1 md:top-2 left-1 md:left-2 flex flex-col">
-                    <span className="font-mono text-[8px] md:text-[9px] text-muted-foreground uppercase">Shot {i+1}</span>
-                    <span className="font-mono text-[9px] md:text-xs text-primary uppercase">{shot.type}</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="min-h-11 flex-1 gap-2 lg:flex-none" onClick={() => workspace.addShot("image")}><ImageIcon className="h-4 w-4" /> Image</Button>
+          <Button variant="outline" className="min-h-11 flex-1 gap-2 lg:flex-none" onClick={() => workspace.addShot("video")}><Video className="h-4 w-4" /> Video</Button>
+          <Button variant="outline" className="min-h-11 gap-2" onClick={() => workspace.exportProject(activeProject.id)}><Download className="h-4 w-4" /> Export</Button>
+          <Button variant="cinematic" className="min-h-11 gap-2" onClick={savePlan}><Wand2 className="h-4 w-4" /> Save batch plan</Button>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto">
+        <section aria-label="Sequence timeline" className="border-b border-border bg-black/40 p-4 md:p-6">
+          <div className="mb-3 flex items-center justify-between text-sm text-muted-foreground"><span>Visual sequence</span><span>{duration}s total</span></div>
+          <div className="flex min-h-28 gap-2 overflow-x-auto pb-2">
+            {activeProject.shots.map((shot, index) => (
+              <button key={shot.id} onClick={() => setSelectedId(shot.id)} className={`min-w-36 flex-1 rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${selectedId === shot.id ? "border-primary bg-primary/15" : "border-border bg-card/50"}`}>
+                <span className="text-xs text-muted-foreground">SHOT {index + 1} · {shot.duration}s</span>
+                <span className="mt-8 block truncate text-sm font-medium">{shot.prompt || "Untitled shot"}</span>
+                <Badge variant={shot.status === "requires_api" ? "warning" : "secondary"} className="mt-2">{shot.status.replace("_", " ")}</Badge>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-5xl space-y-4 p-4 md:p-6" aria-label="Storyboard shot editor">
+          {activeProject.shots.length === 0 && (
+            <div className="rounded-lg border border-dashed border-border p-12 text-center">
+              <Plus className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+              <h2 className="font-semibold">Start your sequence</h2><p className="mt-1 text-sm text-muted-foreground">Add an image or video shot above.</p>
+            </div>
+          )}
+          {activeProject.shots.map((shot, index) => (
+            <Card key={shot.id} className={`overflow-hidden border ${selectedId === shot.id ? "border-primary/70" : "border-border/60"}`}>
+              <div className="grid md:grid-cols-[180px_1fr]">
+                <button onClick={() => setSelectedId(shot.id)} className="relative min-h-40 border-b border-border bg-black/50 p-4 text-left md:border-b-0 md:border-r">
+                  <div className="absolute inset-0 cinematic-grid opacity-30" />
+                  <div className="relative flex h-full flex-col justify-between">
+                    <Badge variant="outline">Shot {index + 1}</Badge>
+                    <div>{shot.type === "video" ? <Video className="h-8 w-8 text-primary" /> : <ImageIcon className="h-8 w-8 text-primary" />}<p className="mt-2 text-sm capitalize">{shot.type} frame</p></div>
                   </div>
+                </button>
+                <div className="space-y-4 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Badge variant={shot.status === "requires_api" ? "warning" : shot.prompt.trim() ? "success" : "secondary"}>{shot.prompt.trim() ? shot.status.replace("_", " ") : "needs prompt"}</Badge>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" aria-label={`Move shot ${index + 1} up`} disabled={index === 0} onClick={() => workspace.moveShot(shot.id, -1)}><ArrowUp className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" aria-label={`Move shot ${index + 1} down`} disabled={index === activeProject.shots.length - 1} onClick={() => workspace.moveShot(shot.id, 1)}><ArrowDown className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" aria-label={`Duplicate shot ${index + 1}`} onClick={() => workspace.duplicateShot(shot.id)}><Copy className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" aria-label={`Delete shot ${index + 1}`} onClick={() => workspace.removeShot(shot.id)}><Trash2 className="h-4 w-4" /></Button>
+                    </div>
+                  </div>
+                  <div><label htmlFor={`prompt-${shot.id}`} className="mb-2 block text-sm font-medium">Shot prompt</label><Textarea id={`prompt-${shot.id}`} value={shot.prompt} onChange={e => workspace.updateShot(shot.id, { prompt: e.target.value })} className="min-h-24 bg-black/30" placeholder="Describe this shot…" /></div>
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <div><label htmlFor={`type-${shot.id}`} className="mb-2 block text-sm">Type</label><Select id={`type-${shot.id}`} options={[{label:"Image",value:"image"},{label:"Video",value:"video"}]} value={shot.type} onChange={e => workspace.updateShot(shot.id, { type: e.target.value as "image" | "video" })} /></div>
+                    <div><label htmlFor={`duration-${shot.id}`} className="mb-2 block text-sm">Duration</label><Input id={`duration-${shot.id}`} type="number" min={1} max={30} value={shot.duration} onChange={e => workspace.updateShot(shot.id, { duration: Math.max(1, Number(e.target.value)) })} /></div>
+                    <div><label htmlFor={`ratio-${shot.id}`} className="mb-2 block text-sm">Ratio</label><Select id={`ratio-${shot.id}`} options={ratios} value={shot.ratio} onChange={e => workspace.updateShot(shot.id, { ratio: e.target.value })} /></div>
+                    <div><label htmlFor={`camera-${shot.id}`} className="mb-2 block text-sm">Camera</label><Select id={`camera-${shot.id}`} options={cameras} value={shot.camera} onChange={e => workspace.updateShot(shot.id, { camera: e.target.value })} /></div>
+                  </div>
+                  <div><label htmlFor={`notes-${shot.id}`} className="mb-2 block text-sm font-medium">Continuity notes</label><Input id={`notes-${shot.id}`} value={shot.continuityNotes} onChange={e => workspace.updateShot(shot.id, { continuityNotes: e.target.value })} placeholder="Wardrobe, lighting, prop, or character continuity…" /></div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Storyboard List */}
-        <div className="flex-1 md:flex-none w-full md:w-96 border-t md:border-t-0 md:border-l border-border bg-card/50 backdrop-blur-md flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-border/50 shrink-0">
-            <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Storyboard Details</h2>
-          </div>
-          <ScrollArea className="flex-1">
-            <div className="p-4 space-y-4">
-              {shots.map((shot, index) => (
-                <Card key={shot.id} className="p-0 overflow-hidden border-border/50 group">
-                  <div className="flex items-stretch h-24">
-                    <div className="w-8 flex flex-col items-center justify-center border-r border-border/50 bg-black/20 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground">
-                      <span className="font-mono text-[10px] mb-2">{index + 1}</span>
-                      <GripVertical className="w-4 h-4" />
-                    </div>
-                    <div className="w-24 bg-black/50 border-r border-border/50 flex items-center justify-center relative">
-                      <span className="font-mono text-[10px] text-muted-foreground absolute top-1 left-1 uppercase">{shot.type}</span>
-                      <Play className="w-6 h-6 text-muted-foreground/30" />
-                    </div>
-                    <div className="flex-1 p-3">
-                      <textarea 
-                        className="w-full h-full bg-transparent resize-none text-xs text-foreground/90 focus:outline-none placeholder:text-muted-foreground/50"
-                        placeholder="Enter shot description..."
-                        value={shot.prompt}
-                        onChange={(e) => {
-                          const newShots = [...shots];
-                          newShots[index].prompt = e.target.value;
-                          setShots(newShots);
-                        }}
-                      />
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </ScrollArea>
-        </div>
+              </div>
+            </Card>
+          ))}
+        </section>
       </div>
     </div>
   );

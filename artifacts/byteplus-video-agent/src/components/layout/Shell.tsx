@@ -30,7 +30,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="w-8 h-8">
+              <Button variant="ghost" size="icon" className="w-10 h-10" aria-label="Open navigation menu">
                 <Menu className="w-5 h-5" />
               </Button>
             </SheetTrigger>

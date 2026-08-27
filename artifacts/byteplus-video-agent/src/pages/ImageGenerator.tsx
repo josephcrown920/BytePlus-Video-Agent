@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { useWorkspace } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
-import { ImageIcon, Wand2, Settings2, Ratio } from "lucide-react";
+import { Copy, ImageIcon, Pencil, Wand2, Settings2, Ratio, Save, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -25,12 +25,15 @@ const STYLES = [
 ];
 
 export default function ImageGenerator() {
-  const { addTask } = useWorkspace();
+  const workspace = useWorkspace();
+  const { addTask, activeProject, presets, updateGeneratorSettings, addPreset, deletePreset, duplicatePreset, renamePreset } = workspace;
   const { toast } = useToast();
-  const [prompt, setPrompt] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState("");
-  const [ratio, setRatio] = useState("16:9");
-  const [style, setStyle] = useState("cinematic");
+  const settings = activeProject.imageSettings;
+  const prompt = settings.prompt;
+  const negativePrompt = settings.negativePrompt ?? "";
+  const ratio = settings.ratio;
+  const style = settings.style ?? "cinematic";
+  const [presetName, setPresetName] = useState("");
 
   const handleGenerate = () => {
     if (!prompt.trim()) return;
@@ -38,6 +41,7 @@ export default function ImageGenerator() {
     addTask({
       type: "image",
       prompt: `[${style}] ${prompt} (AR: ${ratio})`,
+      metadata: settings,
     });
 
     toast({
@@ -46,7 +50,6 @@ export default function ImageGenerator() {
       variant: "destructive"
     });
     
-    setPrompt("");
   };
 
   // Mock visual preview based on ratio
@@ -94,50 +97,73 @@ export default function ImageGenerator() {
         <ScrollArea className="flex-1">
           <div className="p-4 md:p-6 space-y-6">
             <div className="space-y-3">
-              <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+              <label htmlFor="image-prompt" className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                 <span>Prompt</span>
                 <Badge variant="secondary" className="text-[9px]">Text to Image</Badge>
               </label>
-              <Textarea 
+              <Textarea id="image-prompt"
                 placeholder="Describe your scene in cinematic detail..." 
                 className="min-h-[120px] font-sans text-sm resize-none bg-black/40"
                 value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
+                onChange={(e) => updateGeneratorSettings("image", { prompt: e.target.value })}
               />
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
+              <label htmlFor="negative-prompt" className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
                 Negative Prompt (Optional)
               </label>
-              <Input 
+              <Input id="negative-prompt"
                 placeholder="Blurry, low quality, artifacts..." 
                 className="font-sans text-sm bg-black/40"
                 value={negativePrompt}
-                onChange={(e) => setNegativePrompt(e.target.value)}
+                onChange={(e) => updateGeneratorSettings("image", { negativePrompt: e.target.value })}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-3">
-                <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <label htmlFor="image-ratio" className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                   <Ratio className="w-3 h-3" /> Ratio
                 </label>
-                <Select 
+                <Select id="image-ratio"
                   options={ASPECT_RATIOS} 
                   value={ratio}
-                  onChange={(e) => setRatio(e.target.value)}
+                  onChange={(e) => updateGeneratorSettings("image", { ratio: e.target.value })}
                 />
               </div>
               <div className="space-y-3">
-                <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <label htmlFor="image-style" className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                   <ImageIcon className="w-3 h-3" /> Style
                 </label>
-                <Select 
+                <Select id="image-style"
                   options={STYLES}
                   value={style}
-                  onChange={(e) => setStyle(e.target.value)}
+                  onChange={(e) => updateGeneratorSettings("image", { style: e.target.value })}
                 />
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-md border border-border bg-black/20 p-4">
+              <label htmlFor="image-preset" className="text-sm font-medium">Reusable presets</label>
+              <div className="flex gap-2">
+                <Input id="image-preset" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name" />
+                <Button aria-label="Save image preset" variant="outline" size="icon" className="shrink-0" disabled={!presetName.trim()} onClick={() => { addPreset("image", presetName, settings); setPresetName(""); }}><Save className="h-4 w-4" /></Button>
+              </div>
+              <div className="space-y-2">
+                {presets.filter(p => p.kind === "image").map(preset => (
+                  <div key={preset.id} className="flex items-center gap-2">
+                    <Button variant="secondary" className="min-h-10 flex-1 justify-start" onClick={() => updateGeneratorSettings("image", preset.settings)}>{preset.name}</Button>
+                    <Button variant="ghost" size="icon" aria-label={`Rename ${preset.name} preset`} onClick={() => {
+                      const nextName = window.prompt("Rename preset", preset.name);
+                      if (nextName) renamePreset(preset.id, nextName);
+                    }}><Pencil className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" aria-label={`Duplicate ${preset.name} preset`} onClick={() => duplicatePreset(preset.id)}><Copy className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" aria-label={`Delete ${preset.name} preset`} onClick={() => {
+                      if (window.confirm(`Delete the “${preset.name}” preset?`)) deletePreset(preset.id);
+                    }}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                ))}
               </div>
             </div>
 

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useWorkspace } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
-import { Video, Play, Settings2, Camera, Clock } from "lucide-react";
+import { Copy, Pencil, Video, Play, Settings2, Camera, Clock, Save, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
@@ -23,12 +24,15 @@ const CAMERAS = [
 ];
 
 export default function VideoGenerator() {
-  const { addTask } = useWorkspace();
+  const workspace = useWorkspace();
+  const { addTask, activeProject, presets, updateGeneratorSettings, addPreset, deletePreset, duplicatePreset, renamePreset } = workspace;
   const { toast } = useToast();
-  const [prompt, setPrompt] = useState("");
-  const [duration, setDuration] = useState("4s");
-  const [camera, setCamera] = useState("static");
-  const [motion, setMotion] = useState([50]);
+  const settings = activeProject.videoSettings;
+  const prompt = settings.prompt;
+  const duration = settings.duration ?? "4s";
+  const camera = settings.camera ?? "static";
+  const motion = [settings.motion ?? 50];
+  const [presetName, setPresetName] = useState("");
 
   const handleGenerate = () => {
     if (!prompt.trim()) return;
@@ -36,6 +40,7 @@ export default function VideoGenerator() {
     addTask({
       type: "video",
       prompt: `[${camera} | ${motion[0]}% motion] ${prompt}`,
+      metadata: settings,
     });
 
     toast({
@@ -44,7 +49,6 @@ export default function VideoGenerator() {
       variant: "destructive"
     });
     
-    setPrompt("");
   };
 
   return (
@@ -87,49 +91,50 @@ export default function VideoGenerator() {
         <ScrollArea className="flex-1">
           <div className="p-4 md:p-6 space-y-8">
             <div className="space-y-3">
-              <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+              <label htmlFor="video-prompt" className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                 <span>Action Prompt</span>
                 <Badge variant="secondary" className="text-[9px]">Text to Video</Badge>
               </label>
-              <Textarea 
+              <Textarea id="video-prompt"
                 placeholder="Describe the motion and action..." 
                 className="min-h-[120px] font-sans text-sm resize-none bg-black/40"
                 value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
+                onChange={(e) => updateGeneratorSettings("video", { prompt: e.target.value })}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-3">
-                <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <label htmlFor="video-duration" className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                   <Clock className="w-3 h-3" /> Duration
                 </label>
-                <Select 
+                <Select id="video-duration"
                   options={DURATIONS} 
                   value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
+                  onChange={(e) => updateGeneratorSettings("video", { duration: e.target.value })}
                 />
               </div>
               <div className="space-y-3">
-                <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <label htmlFor="video-camera" className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                   <Camera className="w-3 h-3" /> Camera
                 </label>
-                <Select 
+                <Select id="video-camera"
                   options={CAMERAS}
                   value={camera}
-                  onChange={(e) => setCamera(e.target.value)}
+                  onChange={(e) => updateGeneratorSettings("video", { camera: e.target.value })}
                 />
               </div>
             </div>
 
             <div className="space-y-4 pt-4 border-t border-border">
-              <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+              <label id="motion-intensity-label" className="text-xs font-mono text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                 <span>Motion Intensity</span>
                 <span className="text-primary">{motion[0]}%</span>
               </label>
               <Slider 
+                aria-labelledby="motion-intensity-label"
                 value={motion}
-                onValueChange={setMotion}
+                onValueChange={value => updateGeneratorSettings("video", { motion: value[0] })}
                 max={100}
                 step={1}
                 className="py-2"
@@ -137,6 +142,29 @@ export default function VideoGenerator() {
               <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
                 <span>Subtle</span>
                 <span>Dynamic</span>
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-md border border-border bg-black/20 p-4">
+              <label htmlFor="video-preset" className="text-sm font-medium">Reusable presets</label>
+              <div className="flex gap-2">
+                <Input id="video-preset" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name" />
+                <Button aria-label="Save video preset" variant="outline" size="icon" className="shrink-0" disabled={!presetName.trim()} onClick={() => { addPreset("video", presetName, settings); setPresetName(""); }}><Save className="h-4 w-4" /></Button>
+              </div>
+              <div className="space-y-2">
+                {presets.filter(p => p.kind === "video").map(preset => (
+                  <div key={preset.id} className="flex items-center gap-2">
+                    <Button variant="secondary" className="min-h-10 flex-1 justify-start" onClick={() => updateGeneratorSettings("video", preset.settings)}>{preset.name}</Button>
+                    <Button variant="ghost" size="icon" aria-label={`Rename ${preset.name} preset`} onClick={() => {
+                      const nextName = window.prompt("Rename preset", preset.name);
+                      if (nextName) renamePreset(preset.id, nextName);
+                    }}><Pencil className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" aria-label={`Duplicate ${preset.name} preset`} onClick={() => duplicatePreset(preset.id)}><Copy className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" aria-label={`Delete ${preset.name} preset`} onClick={() => {
+                      if (window.confirm(`Delete the “${preset.name}” preset?`)) deletePreset(preset.id);
+                    }}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                ))}
               </div>
             </div>
 

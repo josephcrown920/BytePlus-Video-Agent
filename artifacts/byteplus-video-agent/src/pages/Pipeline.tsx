@@ -2,10 +2,12 @@ import { useWorkspace, TaskType } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from "date-fns";
-import { ImageIcon, Video, AlertCircle, Loader2, Play } from "lucide-react";
+import { ImageIcon, Video, AlertCircle, ClipboardList, Play, Trash2, Pencil, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 
 export default function Pipeline() {
-  const { tasks } = useWorkspace();
+  const { tasks, projects, removeTask, clearTasks, openProject } = useWorkspace();
 
   const getIcon = (type: TaskType) => {
     switch (type) {
@@ -30,16 +32,19 @@ export default function Pipeline() {
       <div className="p-4 md:p-6 border-b border-border bg-card/30 flex flex-col md:flex-row items-start md:items-center justify-between shrink-0 gap-2 md:gap-0">
         <div>
           <h1 className="text-xl font-bold tracking-tight">Render Pipeline</h1>
-          <p className="text-sm text-muted-foreground mt-1">Monitor Seedream and Seedance generation tasks</p>
+          <p className="text-sm text-muted-foreground mt-1">Review saved generation plans before connecting media APIs</p>
         </div>
         <div className="flex gap-4 items-center w-full md:w-auto justify-between md:justify-end">
           <div className="flex flex-col items-start md:items-end">
-            <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Queue Status</span>
-            <span className="text-sm font-mono text-primary flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              Active
+              <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Planning status</span>
+              <span className="text-sm font-mono text-yellow-500 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                Offline · {tasks.length} saved
             </span>
           </div>
+            {tasks.length > 0 && <Button variant="outline" size="sm" onClick={() => {
+              if (window.confirm("Delete every saved offline plan? Your projects will remain.")) clearTasks();
+            }}>Clear plans</Button>}
         </div>
       </div>
 
@@ -47,8 +52,9 @@ export default function Pipeline() {
         <div className="max-w-5xl mx-auto space-y-4">
           {tasks.length === 0 ? (
             <div className="text-center py-20 bg-card/20 rounded-md border border-dashed border-border/50">
-              <Loader2 className="w-8 h-8 text-muted-foreground/30 animate-spin mx-auto mb-4" />
-              <p className="text-muted-foreground font-mono text-sm uppercase tracking-wider">Pipeline Empty</p>
+              <ClipboardList className="w-8 h-8 text-muted-foreground/30 mx-auto mb-4" />
+              <p className="text-muted-foreground font-mono text-sm uppercase tracking-wider">No offline plans yet</p>
+              <p className="mt-2 text-sm text-muted-foreground">Save a generator prompt or multi-shot batch to review it here.</p>
             </div>
           ) : (
             tasks.map(task => (
@@ -94,7 +100,15 @@ export default function Pipeline() {
                     </div>
                     
                     <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground font-mono">
-                      <span>{formatDistanceToNow(task.createdAt, { addSuffix: true })}</span>
+                       <span>{formatDistanceToNow(task.createdAt, { addSuffix: true })}</span>
+                       <div className="flex items-center gap-1">
+                         {task.projectId && projects.some(p => p.id === task.projectId) && (
+                           <Link href={task.type === "multi-shot" ? "/multi-shot" : task.type === "video" ? "/video-generator" : "/image-generator"}>
+                             <Button size="sm" variant="ghost" className="gap-2" onClick={() => openProject(task.projectId!)}><Pencil className="h-4 w-4" /> Edit</Button>
+                           </Link>
+                         )}
+                         <Button size="icon" variant="ghost" aria-label="Remove saved plan" onClick={() => removeTask(task.id)}><Trash2 className="h-4 w-4" /></Button>
+                       </div>
                       {task.status === 'processing' && (
                         <div className="w-32 h-1 bg-secondary rounded-full overflow-hidden">
                           <div 

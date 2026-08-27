@@ -17,7 +17,7 @@ const NAV_ITEMS = [
 export function Sidebar({ className }: { className?: string }) {
   const [location] = useLocation();
   const { tasks } = useWorkspace();
-  const activeTasks = tasks.filter(t => t.status === 'processing').length;
+  const offlinePlans = tasks.filter(t => t.status === 'requires_api').length;
 
   return (
     <div className={cn("w-64 border-r border-border bg-card/50 backdrop-blur-xl flex flex-col h-full shrink-0", className)}>
@@ -60,8 +60,8 @@ export function Sidebar({ className }: { className?: string }) {
 
       <div className="p-4 border-t border-border/50 bg-black/20">
         <div className="flex items-center justify-between mb-4">
-          <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Queue</span>
-          <span className="text-xs font-mono text-primary">{activeTasks} Active</span>
+          <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Offline plans</span>
+          <span className="text-xs font-mono text-primary">{offlinePlans} Saved</span>
         </div>
         <Link href="/pipeline" className="block w-full">
           <Button variant="outline" className="w-full justify-start text-xs h-8">

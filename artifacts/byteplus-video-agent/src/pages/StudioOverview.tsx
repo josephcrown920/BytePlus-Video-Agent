@@ -2,11 +2,11 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useWorkspace } from "@/lib/store";
-import { ImageIcon, Video, Layers, Activity, Play } from "lucide-react";
+import { ImageIcon, Video, Layers, Activity, Clapperboard, ArrowRight } from "lucide-react";
 
 export default function StudioOverview() {
-  const { tasks } = useWorkspace();
-  const completedTasks = tasks.filter(t => t.status === 'completed').length;
+  const { tasks, projects, activeProject, openProject } = useWorkspace();
+  const offlinePlans = tasks.filter(t => t.status === 'requires_api').length;
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -25,7 +25,7 @@ export default function StudioOverview() {
           </h1>
           <p className="text-sm md:text-lg text-muted-foreground max-w-2xl font-mono">
             Orchestrate Seedream models for visual development and Seedance models for temporal generation. 
-            All pipelines operational.
+            Build production-ready prompts, shots, presets, and handoff files while generation remains offline.
           </p>
         </div>
       </div>
@@ -90,18 +90,20 @@ export default function StudioOverview() {
                 <span className="text-xs font-mono text-destructive">DISCONNECTED</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm">Render Tasks Completed</span>
-                <span className="text-xs font-mono text-primary">{completedTasks}</span>
+                <span className="text-sm">Offline Plans Saved</span>
+                <span className="text-xs font-mono text-primary">{offlinePlans}</span>
               </div>
             </div>
           </Card>
 
           <Card className="p-0 overflow-hidden border-border/30 relative flex items-center justify-center min-h-[200px]">
             <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent" />
-            <div className="text-center z-10 p-6">
-              <Play className="w-12 h-12 text-primary/50 mx-auto mb-4" />
-              <h4 className="font-mono text-sm uppercase tracking-wider mb-2">Recent Draft</h4>
-              <p className="text-xs text-muted-foreground">No completed sequences available for playback.</p>
+            <div className="z-10 w-full p-6">
+              <Clapperboard className="mb-4 h-10 w-10 text-primary/60" />
+              <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Continue editing</p>
+              <h4 className="mt-2 text-xl font-semibold">{activeProject.name}</h4>
+              <p className="mt-1 text-sm text-muted-foreground">{activeProject.shots.length} storyboard shots · {projects.length} saved project{projects.length === 1 ? "" : "s"}</p>
+              <Link href="/multi-shot"><Button className="mt-5 min-h-11 gap-2" variant="cinematic" onClick={() => openProject(activeProject.id)}>Open sequence <ArrowRight className="h-4 w-4" /></Button></Link>
             </div>
           </Card>
         </div>
