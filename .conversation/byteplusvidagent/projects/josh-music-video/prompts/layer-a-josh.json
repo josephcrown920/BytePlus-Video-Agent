@@ -1,0 +1,12 @@
+{
+  "layer": "A",
+  "name": "NBA Josh - Foreground",
+  "model": "Seedance 2.0",
+  "duration": 12,
+  "ratio": "16:9",
+  "resolution": "1080p",
+  "position": "bottom-right of frame",
+  "shot": "waist up medium shot",
+  "prompt": "Cinematic music video scene. A tall athletic Black male rapper with long red-tipped dreadlocks, diamond \"NBA JOSH\" chain, arm tattoos, studded leather belt, black leather pants and gold watch, stands in the bottom right of frame, shot from waist up, facing slightly left toward camera. Dark wet urban street at night. Performs his hook with calm fearless energy, subtle hand gestures, relaxed confidence. Static locked-off camera. Zero camera movement. Dramatic overhead streetlight, high contrast, moody atmosphere. Near the end he glances over his left shoulder with a smirk, then turns and slowly walks out of frame. Realistic, cinematic, music video aesthetic, shallow depth of field.",
+  "notes": "Use a reference image of Josh as first frame to lock in facial likeness. Generate 3 variations and pick the best."
+}

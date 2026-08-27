@@ -1,0 +1,26 @@
+<svg width="1200" height="820" viewBox="0 0 1200 820" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="70" y1="32" x2="1080" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2A1D52"/>
+      <stop offset=".56" stop-color="#4C2451"/>
+      <stop offset="1" stop-color="#EC9A72"/>
+    </linearGradient>
+    <linearGradient id="mountain" x1="500" y1="200" x2="500" y2="620" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D7C7F5"/>
+      <stop offset="1" stop-color="#71568C"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="820" rx="30" fill="#101223"/>
+  <rect x="26" y="26" width="1148" height="768" rx="22" fill="url(#bg)"/>
+  <circle cx="910" cy="214" r="88" fill="#FFD7A6" fill-opacity=".8"/>
+  <path d="M26 520L245 350L347 427L560 202L740 402L900 280L1174 494V794H26V520Z" fill="url(#mountain)" fill-opacity=".78"/>
+  <path d="M26 570L282 414L420 497L618 338L840 505L1012 398L1174 520V794H26V570Z" fill="#261D4A" fill-opacity=".92"/>
+  <path d="M26 615C234 565 374 634 542 584C736 527 857 550 1174 594V794H26V615Z" fill="#111528" fill-opacity=".78"/>
+  <rect x="62" y="60" width="392" height="120" rx="18" fill="#0C1022" fill-opacity=".66" stroke="#FFF" stroke-opacity=".17"/>
+  <text x="90" y="102" fill="#BDA7FF" font-family="Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="3">CONCEPT FRAME / 01</text>
+  <text x="90" y="146" fill="#FFF" font-family="Arial, sans-serif" font-size="26" font-weight="700">Dusk over the quiet ridge</text>
+  <rect x="62" y="694" width="1076" height="5" rx="3" fill="#FFF" fill-opacity=".24"/>
+  <rect x="62" y="694" width="578" height="5" rx="3" fill="#A78BFA"/>
+  <text x="62" y="744" fill="#F5EFFB" font-family="Arial, sans-serif" font-size="19">Seedream 5.0</text>
+  <text x="1138" y="744" text-anchor="end" fill="#F5EFFB" font-family="Arial, sans-serif" font-size="19">2K / PNG</text>
+</svg>

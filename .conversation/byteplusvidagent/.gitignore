@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Runtime drafts
+/drafts/
+!/drafts/.gitkeep
+
+# Generated assets
+assets/images/*
+assets/videos/*
+assets/vfx/*
+deliverables/*
+!assets/images/.gitkeep
+!assets/videos/.gitkeep
+!assets/vfx/.gitkeep
+!deliverables/.gitkeep
+
+# Production bible user data
+production-bible/*.json
+!production-bible/.gitkeep
+
+# Reports
+reports/*
+!reports/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cache
+.cache/
+.tmp/
+tmp/

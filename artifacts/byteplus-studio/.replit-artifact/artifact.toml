@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "BytePlus Video Agent"
+description = "A cinematic AI production studio for turning creative direction into concept art, sequenced video renders, and coherent delivered scenes."
+version = "1.0.0"
+id = "artifacts/byteplus-studio"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25939
+
+[services.development]
+run = "pnpm --filter @workspace/byteplus-studio run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/byteplus-studio", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/byteplus-studio/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25939"
+BASE_PATH = "/"
