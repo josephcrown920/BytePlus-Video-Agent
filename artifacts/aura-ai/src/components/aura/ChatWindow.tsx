@@ -379,6 +379,7 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                             type: string;
                             state: string;
                             toolName?: string;
+                             toolCallId?: string;
                             input?: unknown;
                             output?: unknown;
                           };
@@ -469,7 +470,12 @@ export function ChatWindow({ threadId, initialMessages, initialThreads }: Props)
                                   output={toolPart.output}
                                   progress={videoProgress}
                                 />
-                                <StoryboardCard output={storyboardOutput} isPending={!hasOutput} />
+                                <StoryboardCard
+                                  output={storyboardOutput}
+                                  isPending={!hasOutput}
+                                  messageId={message.id}
+                                  toolCallId={toolPart.toolCallId}
+                                />
                               </div>
                             );
                           }

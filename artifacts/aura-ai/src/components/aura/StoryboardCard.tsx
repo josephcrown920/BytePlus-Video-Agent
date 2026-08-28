@@ -37,7 +37,10 @@ type SceneImageState =
   | { status: "error" }
   | { status: "retrying" };
 
-async function generateImage(prompt: string): Promise<string | null> {
+async function generateImage(
+  prompt: string,
+  persistence?: { messageId: string; toolCallId: string; sceneIndex: number },
+): Promise<string | null> {
   const { data: session } = await supabase.auth.getSession();
   const token = session?.session?.access_token;
   if (!token) return null;
@@ -48,7 +51,7 @@ async function generateImage(prompt: string): Promise<string | null> {
       "content-type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ prompt, ...persistence }),
   });
 
   if (!res.ok) return null;
@@ -58,12 +61,16 @@ async function generateImage(prompt: string): Promise<string | null> {
 
 function SceneFrame({
   scene,
+  sceneIndex,
   isPending = false,
   readOnly = false,
+  persistence,
 }: {
   scene: Scene;
+  sceneIndex: number;
   isPending?: boolean;
   readOnly?: boolean;
+  persistence?: { messageId: string; toolCallId: string };
 }) {
   const [imgState, setImgState] = useState<SceneImageState>(
     scene.imageUrl ? { status: "loading" } : isPending ? { status: "pending" } : { status: "error" },
@@ -73,6 +80,7 @@ function SceneFrame({
   const [editOpen, setEditOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editPrompt, setEditPrompt] = useState(scene.image_prompt);
+  const [currentPrompt, setCurrentPrompt] = useState(scene.image_prompt);
   const [editLoading, setEditLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -80,21 +88,27 @@ function SceneFrame({
     if (readOnly) return;
     setImgState({ status: "retrying" });
     try {
-      const url = await generateImage(scene.image_prompt);
+      const url = await generateImage(
+        currentPrompt,
+        persistence && {
+          ...persistence,
+          sceneIndex,
+        },
+      );
       if (!url) { setImgState({ status: "error" }); return; }
       setCurrentUrl(url);
       setImgState({ status: "loading" });
     } catch {
       setImgState({ status: "error" });
     }
-  }, [scene.image_prompt, readOnly]);
+  }, [currentPrompt, persistence, readOnly, sceneIndex]);
 
   const openEdit = useCallback(() => {
-    setEditPrompt(scene.image_prompt);
+    setEditPrompt(currentPrompt);
     setEditOpen(true);
     // focus textarea after render
     setTimeout(() => textareaRef.current?.focus(), 50);
-  }, [scene.image_prompt]);
+  }, [currentPrompt]);
 
   const cancelEdit = useCallback(() => {
     setEditOpen(false);
@@ -107,16 +121,29 @@ function SceneFrame({
     setEditOpen(false);
     setImgState({ status: "retrying" });
     try {
-      const url = await generateImage(trimmed);
+      const url = await generateImage(
+        trimmed,
+        persistence && {
+          ...persistence,
+          sceneIndex,
+        },
+      );
       if (!url) { setImgState({ status: "error" }); return; }
       setCurrentUrl(url);
+      setCurrentPrompt(trimmed);
+      setEditPrompt(trimmed);
       setImgState({ status: "loading" });
     } catch {
       setImgState({ status: "error" });
     } finally {
       setEditLoading(false);
     }
-  }, [editPrompt]);
+  }, [editPrompt, persistence, sceneIndex]);
+
+  useEffect(() => {
+    setCurrentPrompt(scene.image_prompt);
+    setEditPrompt(scene.image_prompt);
+  }, [scene.image_prompt]);
 
   // When scene.imageUrl arrives (streaming: was null, now has a URL), kick off the load
   useEffect(() => {
@@ -211,7 +238,11 @@ function SceneFrame({
         )}
 
         {/* Edit button — shown on hover when image is loaded */}
-        {isLoaded && hovered && !editLoading && !readOnly && (
+        {isLoaded &&
+          hovered &&
+          !editLoading &&
+          !isPending &&
+          !readOnly && (
           <button
             type="button"
             onClick={openEdit}
@@ -294,10 +325,14 @@ export function StoryboardCard({
   output,
   isPending = false,
   readOnly = false,
+  messageId,
+  toolCallId,
 }: {
   output: unknown;
   isPending?: boolean;
   readOnly?: boolean;
+  messageId?: string;
+  toolCallId?: string;
 }) {
   const board = output as StoryboardOutput;
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -402,7 +437,17 @@ export function StoryboardCard({
             <div key={scene.scene} className="flex gap-3 p-4">
               {/* Frame image with loading / retry states */}
               <div className="shrink-0">
-                 <SceneFrame scene={scene} isPending={isPending && !scene.imageUrl} readOnly={readOnly} />
+                <SceneFrame
+                  scene={scene}
+                  sceneIndex={i}
+                  isPending={isPending && !scene.imageUrl}
+                  readOnly={readOnly}
+                  persistence={
+                    messageId && toolCallId
+                      ? { messageId, toolCallId }
+                      : undefined
+                  }
+                />
               </div>
 
               {/* Scene details */}
