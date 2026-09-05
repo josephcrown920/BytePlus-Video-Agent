@@ -56,7 +56,8 @@ export async function* streamProductionJob(r:{instruction:string;taskType:string
     yield {type:"done"};
     return;
   }
-  const isImage=r.taskType.toLowerCase().includes("image")||r.taskType.toLowerCase().includes("reference");
+  const t=r.taskType.toLowerCase();
+  const isImage=t.includes("image")||t.includes("reference");
   yield {type:"stage",stage:"generating",mode,message:`Generating ${isImage?"reference image":"shot"} (${plan.beats.length} beat(s), ${plan.pacing} pacing, ${plan.aspectRatio}).`};
   try{
     const url=isImage

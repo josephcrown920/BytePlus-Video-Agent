@@ -75,13 +75,12 @@ export default function Studio() {
       <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 bg-background relative overflow-hidden">
 
         {/* Mode Selector */}
-        <div className="flex items-center gap-2 mb-4" role="tablist" aria-label="Production mode">
+        <div className="flex items-center gap-2 mb-4" role="group" aria-label="Production mode">
           {MODES.map(({ id, label, icon: Icon, description }) => (
             <button
               key={id}
               type="button"
-              role="tab"
-              aria-selected={activeMode === id}
+              aria-pressed={activeMode === id}
               title={description}
               onClick={() => setActiveMode(id)}
               className={`px-3 py-1.5 text-xs font-mono rounded border flex items-center gap-2 transition-colors ${

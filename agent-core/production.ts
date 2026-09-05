@@ -5,22 +5,23 @@ export type ProductionMode="cinematic"|"viral"|"standard";
 export const PRODUCTION_MODES:ProductionMode[]=["cinematic","viral","standard"];
 export function resolveProductionMode(input?:string):ProductionMode{const q=(input||"").toLowerCase();if(/cinematic|film|movie|scene|shot list|storyboard/.test(q))return"cinematic";if(/viral|short.?form|tiktok|reel|shorts|hook|faceless|trend/.test(q))return"viral";return(PRODUCTION_MODES as string[]).includes(q)?q as ProductionMode:"standard"}
 
-export interface ShotBeat{id:string;order:number;intent:string;beat:string;cameraFraming:string;cameraMovement:string;lensStyle:string;lighting:string;mood:string;durationSeconds:number;continuityNotes:string}
+export interface ShotBeat{id:string;order:number;intent:string;beat:string;cameraFraming:string;cameraMovement:string;lensStyle:string;lighting:string;mood:string;durationSeconds:number;continuityNotes:string;isHook?:boolean}
 export interface ShotPlan{mode:ProductionMode;pacing:"slow"|"medium"|"fast"|"rapid";aspectRatio:string;beats:ShotBeat[];totalDurationSeconds:number;hookFirst:boolean}
+type BeatTemplate=Pick<ShotBeat,"intent"|"beat"|"cameraFraming"|"cameraMovement"|"lensStyle"|"lighting"|"mood"|"isHook">;
 
-const CINEMATIC_BEATS:Array<Pick<ShotBeat,"intent"|"beat"|"cameraFraming"|"cameraMovement"|"lensStyle"|"lighting"|"mood">>=[
+const CINEMATIC_BEATS:BeatTemplate[]=[
   {intent:"Establish world",beat:"Wide establishing shot introduces location and tone",cameraFraming:"wide",cameraMovement:"slow push in",lensStyle:"35mm anamorphic",lighting:"motivated practicals, volumetric haze",mood:"atmospheric"},
   {intent:"Introduce subject",beat:"Medium shot reveals subject and intent",cameraFraming:"medium",cameraMovement:"static with subtle drift",lensStyle:"50mm spherical",lighting:"key + soft fill, golden hour",mood:"intimate"},
   {intent:"Escalate tension",beat:"Close up on decisive action or reaction",cameraFraming:"close-up",cameraMovement:"handheld micro-shake",lensStyle:"85mm shallow depth",lighting:"high-contrast rim light",mood:"tense"},
   {intent:"Resolve beat",beat:"Wide or crane shot resolves the beat and sets continuity for the next scene",cameraFraming:"wide/crane",cameraMovement:"slow crane pull back",lensStyle:"24mm wide",lighting:"cool blue hour falloff",mood:"resolved"},
 ];
-const VIRAL_BEATS:Array<Pick<ShotBeat,"intent"|"beat"|"cameraFraming"|"cameraMovement"|"lensStyle"|"lighting"|"mood">>=[
-  {intent:"Hook (first 1.5s)",beat:"Pattern-interrupt hook that states the payoff or asks a question immediately",cameraFraming:"tight vertical",cameraMovement:"snap zoom",lensStyle:"phone-native wide",lighting:"bright, high key",mood:"urgent"},
+const VIRAL_BEATS:BeatTemplate[]=[
+  {intent:"Hook (first 1.5s)",beat:"Pattern-interrupt hook that states the payoff or asks a question immediately",cameraFraming:"tight vertical",cameraMovement:"snap zoom",lensStyle:"phone-native wide",lighting:"bright, high key",mood:"urgent",isHook:true},
   {intent:"Deliver value fast",beat:"Rapid-fire proof/point with on-screen caption text",cameraFraming:"medium vertical",cameraMovement:"whip cut",lensStyle:"phone-native wide",lighting:"bright, high key",mood:"energetic"},
   {intent:"Twist or escalation",beat:"Faceless b-roll or trend cut that raises stakes or curiosity",cameraFraming:"insert/b-roll",cameraMovement:"speed ramp",lensStyle:"phone-native wide",lighting:"punchy, saturated",mood:"exciting"},
   {intent:"CTA / loop",beat:"Fast payoff line that loops back to the hook or drives an action",cameraFraming:"tight vertical",cameraMovement:"static, caption-forward",lensStyle:"phone-native wide",lighting:"bright, high key",mood:"satisfying"},
 ];
-const STANDARD_BEATS:Array<Pick<ShotBeat,"intent"|"beat"|"cameraFraming"|"cameraMovement"|"lensStyle"|"lighting"|"mood">>=[
+const STANDARD_BEATS:BeatTemplate[]=[
   {intent:"Establish",beat:"Establishing shot",cameraFraming:"wide",cameraMovement:"static",lensStyle:"35mm",lighting:"natural",mood:"neutral"},
   {intent:"Deliver",beat:"Core subject shot",cameraFraming:"medium",cameraMovement:"static",lensStyle:"50mm",lighting:"natural",mood:"neutral"},
 ];
@@ -28,13 +29,14 @@ export function planShotBeats(mode:ProductionMode,userInstruction:string,beatCou
   const templates=mode==="cinematic"?CINEMATIC_BEATS:mode==="viral"?VIRAL_BEATS:STANDARD_BEATS;
   const count=Math.max(1,Math.min(beatCount??templates.length,mode==="viral"?6:8));
   const durationSeconds=mode==="cinematic"?6:mode==="viral"?2:4;
-  const beats:ShotBeat[]=Array.from({length:count},(_,i)=>{const t=templates[i%templates.length];return{id:`beat-${i+1}`,order:i,...t,durationSeconds,continuityNotes:i===0?"Opening beat — establish locked references.":`Continue from beat-${i}: preserve identity, wardrobe, and lighting continuity.`}});
+  const beats:ShotBeat[]=Array.from({length:count},(_,i)=>{const t=templates[i%templates.length];return{id:`beat-${i+1}`,order:i,...t,isHook:i===0?t.isHook:false,durationSeconds,continuityNotes:i===0?"Opening beat — establish locked references.":`Continue from beat-${i}: preserve identity, wardrobe, and lighting continuity.`}});
   return{mode,pacing:mode==="viral"?"rapid":mode==="cinematic"?"slow":"medium",aspectRatio:mode==="viral"?"9:16":"16:9",beats,totalDurationSeconds:beats.reduce((a,b)=>a+b.durationSeconds,0),hookFirst:mode==="viral"}
 }
 /** Hook-first ordering for viral mode: keeps the strongest hook beat first regardless of narrative order.
+ *  Uses the explicit `isHook` flag (not free-form text matching) so future copy edits to `intent` cannot silently break ordering.
  *  Regenerates id/continuityNotes for the new sequence so continuity references stay accurate post-reorder. */
 export function hookFirstOrder(beats:ShotBeat[]):ShotBeat[]{
-  const hookIdx=beats.findIndex(b=>/hook/i.test(b.intent));
+  const hookIdx=beats.findIndex(b=>b.isHook);
   if(hookIdx<=0)return beats;
   const hook=beats[hookIdx];
   const reordered=[hook,...beats.filter((_,i)=>i!==hookIdx)];

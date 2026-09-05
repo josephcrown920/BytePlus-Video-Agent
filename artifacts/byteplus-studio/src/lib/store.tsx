@@ -222,7 +222,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   const runJobStages = useCallback((jobId: string, mode: ProductionMode) => {
     const messages = STAGE_NARRATION[mode];
-    const stages: ProductionStage[] = ['planning', 'routing', 'generating', 'inspecting', 'verifying', 'delivering'];
+    // `revising` only appears when a candidate needs a repair pass after inspection, mirroring the
+    // backend's real approve/reject/repair loop rather than always running every stage unconditionally.
+    const needsRevision = Math.random() < 0.3;
+    const stages: ProductionStage[] = [
+      'planning', 'routing', 'generating', 'rendering', 'inspecting',
+      ...(needsRevision ? ['revising' as const] : []),
+      'verifying', 'delivering',
+    ];
     // A single deterministic-ish failure point keeps failure/retry paths honestly reachable without
     // ever reporting success before the corresponding stage has actually run.
     const failAt = Math.random() < 0.15 ? stages[2 + Math.floor(Math.random() * 2)] : null;
