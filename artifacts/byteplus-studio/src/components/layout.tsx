@@ -8,9 +8,10 @@ import {
   Server, 
   Activity, 
   Settings,
-  Menu,
-  Zap
+  Zap,
+  Sparkles
 } from 'lucide-react';
+import { useStudio } from '@/lib/store';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Studio', icon: Film },
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const { mode } = useStudio();
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden text-foreground selection:bg-primary/30">
@@ -75,6 +77,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="hidden sm:inline font-mono text-xs border border-border px-2 py-1 rounded bg-card">PROJ_OMEGA_V2</span>
             <span className="hidden sm:inline">/</span>
             <span className="text-foreground capitalize">{location === '/' ? 'Studio' : location.slice(1)}</span>
+            
+            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-mono font-semibold uppercase bg-primary/10 border border-primary/20 text-primary">
+              {mode === 'cinematic' ? <Film className="w-3 h-3" /> : mode === 'viral' ? <Zap className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+              {mode} MODE
+            </span>
           </div>
           
           <div className="flex flex-shrink-0 items-center gap-2 sm:gap-3">

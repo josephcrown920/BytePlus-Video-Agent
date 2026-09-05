@@ -1,6 +1,6 @@
 # Aurora BytePlus / ModelArk Video Agent
 
-Direct ModelArk-oriented video agent for Seedance/Seedream workflows with persistent project memory, reference-aware generation, native response streaming, asynchronous media jobs, candidate QA and targeted repair.
+Direct ModelArk-oriented video agent for Seedance/Seedream workflows with persistent project memory, reference-aware generation, native response streaming, asynchronous media jobs, candidate QA, targeted repair, and first-class Cinematic and Viral generation modes.
 
 ## Production modes
 
@@ -15,10 +15,39 @@ Modes are resolved explicitly (`mode: "cinematic" | "viral" | "standard"`) or in
 ## Production loop
 
 ```text
-Brief → Context → Plan (mode-aware shot beats) → References → ModelArk route
+Brief → Context → Mode Selection (Cinematic / Viral / Standard)
+      → Plan (Shot Beats / Hook & Rhythm) → References → ModelArk route
       → Generate → Inspect → Approve/Reject → Repair
-      → Slate → QA → Render → Verify → Deliver
+      → Sequence Timeline → QA → Render & CDN Deliver → Verify → Graceful Retry
 ```
+
+## Generation Modes
+
+### 🎬 Cinematic Mode
+- Dedicated mode for high-production-value structured scenes and narrative storytelling.
+- Shot Beat Breakdown: Establishes atmosphere, character focus, action climax, and resolving outcome.
+- Metadata & Optics: Lens controls (Anamorphic 2.39:1, 35mm Prime, 85mm Portrait), Volumetric rim key lighting, and camera movement directives (Slow Push In, Crane Up, Arc Orbit, Dolly Zoom).
+- Continuity-aware scoring emphasizing temporal stability, lighting consistency, and camera composition.
+
+### ⚡ Viral Mode
+- Optimized for short-form content (TikTok, Reels, Shorts) with hook-first structures and fast-paced editing.
+- Hook Strategy: Visual shock, pattern interrupt, mystery loop, and bold statement hooks.
+- Pacing & Faceless Flows: Rapid cuts (1.0s - 2.0s beat rhythm), faceless/trend-focused workflows, bold pop karaoke caption overlays, and thumb-stop visual triggers.
+- Scoring weighted heavily for immediate visual appeal, pacing rhythm, and prompt-fit shock value.
+
+## InVideo-like Product Flow
+
+The BytePlus Studio UI (`artifacts/byteplus-studio`) provides an approachable, editor-style product experience:
+- **Storyboard → Timeline → Render**: Drag-and-drop shot reordering, transition controls (Dissolve, Whip Pan, Flash, Zoom Blur), and real-time canvas safe-zone overlays for 16:9 widescreen, 9:16 vertical reel, and 1:1 square formats.
+- **Scene Block Templates**: Instant application of pre-built templates for Cinematic Trailers, Faceless Shorts, Product Promos, and Social Ads.
+- **Shot Inspector**: Granular control over beat intent, lens optics, camera motion, lighting mood, and subtitle caption overlays per shot beat.
+
+## Customer Readiness & Reliability
+
+- **Delivery Lifecycle**: Explicit multi-stage status tracking (`queued` → `sequence_assembly` → `audio_synthesis` → `final_render` → `delivered` / `failed`).
+- **CDN Manifest & Links**: Automated CDN delivery URL generation for verified renders.
+- **Graceful Retries**: Exponential backoff retry policies for GPU timeout handling with single-click manual retry actions in the Render Queue and Sequence Studio.
+- **Persistent Project Memory**: Automatic persistence of user project drafts, shot sequences, and active mode settings across sessions.
 
 ## Backend
 
@@ -60,7 +89,7 @@ Use project memory and locked references before every generation. Score candidat
 
 ## Skills
 
-Video routing includes the supplied HeyGen Avatar, HeyGen Video, HeyGen Translate, Chengfeng 剪口播, Chengfeng 口播成片, Ian Xiaohei SVG Motion and Chengfeng 自进化 skill families. Mode changes which of these are prioritized: see `selectVideoSkills` in `agent-core/video-agent-skills.ts`.
+Video routing includes dedicated `cinematic-director` and `viral-growth-engine` skills alongside HeyGen Avatar, HeyGen Video, HeyGen Translate, Chengfeng 剪口播, Chengfeng 口播成片, Ian Xiaohei SVG Motion and Chengfeng 自进化 skill families.
 
 ## Acceptance
 
@@ -69,9 +98,10 @@ A feature is complete only after the domain contract, API/workflow, provider bou
 ## Development
 
 ```bash
-npm install
-npx tsc --noEmit
-npm run build
+pnpm install
+pnpm run typecheck
+PORT=3000 BASE_PATH=/ pnpm run build
+npx tsx --test agent-core/video-agent.test.ts
 ```
 
 ## Production boundary

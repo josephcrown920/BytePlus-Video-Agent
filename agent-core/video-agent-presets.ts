@@ -1,12 +1,110 @@
-/** Aurora Preset Engine v3 + viral preset index. */
-export const VIDEO_PRESET_IDS=["bullet_time_photo","slow_push_in","vertigo_zoom","parallax_depth","flash_frame_reveal","neon_outline","chrome_lux","broken_mirror","cash_rain","fire_meme","water_rap","trap_house","cold_vision","earth_zoom","speed_ramp_runway","moodboard_sheet","character_sheet","storyboard_previs","album_cover_freeze","glitch_clone_echo","soft_beauty_turn"] as const;
-export type VideoPresetId=typeof VIDEO_PRESET_IDS[number];
-export const PRESET_ALIASES:Record<string,VideoPresetId>={"do bullet time with my photo":"bullet_time_photo","slow zoom on my photo":"slow_push_in","do the dolly zoom effect":"vertigo_zoom","add premium parallax":"parallax_depth","make it neon":"neon_outline","turn this into chrome luxury":"chrome_lux","broken mirror look":"broken_mirror","make it rain money":"cash_rain","house on fire meme":"fire_meme","water rap visual":"water_rap","put him in a trap house":"trap_house","cold blue luxury portrait":"cold_vision","zoom from earth to subject":"earth_zoom","make a moodboard":"moodboard_sheet","make a character sheet":"character_sheet","make a storyboard":"storyboard_previs","album cover look":"album_cover_freeze"};
-export const VIRAL_PRESET_IDS=["BOOT DOMINANCE","FIRE MEME","WATER RAP","NEON DRIP","CASH RAIN","LEAN HAZE","TRAP HOUSE","COLD VISION","BROKEN MIRROR","FRAGMENTS","PALETTE","EARTH ZOOM","HOOK_FIRST_FACELESS","CAPTION_PUNCH_CUT","TREND_REMIX"] as const;
-/** Cinematic Mode preset index: structured shot planning, camera/lens/lighting looks, and continuity-aware sequencing. */
-export const CINEMATIC_PRESET_IDS=["cinematic_beat_sheet","anamorphic_35mm","golden_hour_grade","volumetric_dolly","continuity_lockstep","teal_orange_grade","crane_resolve","handheld_tension"] as const;
-export type CinematicPresetId=typeof CINEMATIC_PRESET_IDS[number];
-export type ViralPresetId=typeof VIRAL_PRESET_IDS[number];
-export function resolvePreset(input:string){const q=input.toLowerCase().trim();return VIDEO_PRESET_IDS.find(x=>x===q)||PRESET_ALIASES[q]||VIRAL_PRESET_IDS.find(x=>x.toLowerCase()===q)||CINEMATIC_PRESET_IDS.find(x=>x.toLowerCase()===q)||null;}
-/** Curated preset shortlist per production mode, used to seed the studio UI and prompt-building logic. */
-export function presetsForMode(mode:"cinematic"|"viral"|"standard"):string[]{if(mode==="cinematic")return[...CINEMATIC_PRESET_IDS];if(mode==="viral")return[...VIRAL_PRESET_IDS];return[...VIDEO_PRESET_IDS].slice(0,6);}
+/** Aurora Preset Engine v3 + Cinematic & Viral Preset Index. */
+export const CINEMATIC_PRESET_IDS = [
+  "anamorphic_dolly",
+  "slow_push_in",
+  "vertigo_zoom",
+  "parallax_depth",
+  "cold_vision",
+  "film_noir_key",
+  "macro_lens_focus",
+  "one_shot_tracking",
+  "imax_landscape",
+] as const;
+
+export type CinematicPresetId = typeof CINEMATIC_PRESET_IDS[number];
+
+export const VIDEO_PRESET_IDS = [
+  "bullet_time_photo",
+  "slow_push_in",
+  "vertigo_zoom",
+  "parallax_depth",
+  "flash_frame_reveal",
+  "neon_outline",
+  "chrome_lux",
+  "broken_mirror",
+  "cash_rain",
+  "fire_meme",
+  "water_rap",
+  "trap_house",
+  "cold_vision",
+  "earth_zoom",
+  "speed_ramp_runway",
+  "moodboard_sheet",
+  "character_sheet",
+  "storyboard_previs",
+  "album_cover_freeze",
+  "glitch_clone_echo",
+  "soft_beauty_turn",
+  ...CINEMATIC_PRESET_IDS,
+] as const;
+
+export type VideoPresetId = typeof VIDEO_PRESET_IDS[number];
+
+export const PRESET_ALIASES: Record<string, VideoPresetId> = {
+  "do bullet time with my photo": "bullet_time_photo",
+  "slow zoom on my photo": "slow_push_in",
+  "do the dolly zoom effect": "vertigo_zoom",
+  "add premium parallax": "parallax_depth",
+  "make it neon": "neon_outline",
+  "turn this into chrome luxury": "chrome_lux",
+  "broken mirror look": "broken_mirror",
+  "make it rain money": "cash_rain",
+  "house on fire meme": "fire_meme",
+  "water rap visual": "water_rap",
+  "put him in a trap house": "trap_house",
+  "cold blue luxury portrait": "cold_vision",
+  "zoom from earth to subject": "earth_zoom",
+  "make a moodboard": "moodboard_sheet",
+  "make a character sheet": "character_sheet",
+  "make a storyboard": "storyboard_previs",
+  "album cover look": "album_cover_freeze",
+  "cinematic lens dolly": "anamorphic_dolly",
+  "film noir mood": "film_noir_key",
+  "macro lens close up": "macro_lens_focus",
+  "one shot tracking master": "one_shot_tracking",
+  "imax sweeping landscape": "imax_landscape",
+};
+
+export const VIRAL_PRESET_IDS = [
+  "HOOK_THUMB_STOP",
+  "FAST_CUT_MONTAGE",
+  "FACELESS_TEXT_OVERLAY",
+  "TRENDING_SPEED_RAMP",
+  "SPLIT_SCREEN_REACTION",
+  "BOOT DOMINANCE",
+  "FIRE MEME",
+  "WATER RAP",
+  "NEON DRIP",
+  "CASH RAIN",
+  "LEAN HAZE",
+  "TRAP HOUSE",
+  "COLD VISION",
+  "BROKEN MIRROR",
+  "FRAGMENTS",
+  "PALETTE",
+  "EARTH ZOOM",
+] as const;
+
+export function resolvePreset(input: string) {
+  const q = input.toLowerCase().trim();
+  return (
+    VIDEO_PRESET_IDS.find((x) => x === q) ||
+    PRESET_ALIASES[q] ||
+    VIRAL_PRESET_IDS.find((x) => x.toLowerCase() === q) ||
+    null
+  );
+}
+
+export function resolvePresetForMode(input: string, mode?: "cinematic" | "viral" | "standard") {
+  const resolved = resolvePreset(input);
+  if (resolved) return resolved;
+
+  if (mode === "cinematic") {
+    return "slow_push_in";
+  }
+  if (mode === "viral") {
+    return "HOOK_THUMB_STOP";
+  }
+  return null;
+}
+
