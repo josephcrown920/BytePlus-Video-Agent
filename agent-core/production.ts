@@ -31,5 +31,12 @@ export function planShotBeats(mode:ProductionMode,userInstruction:string,beatCou
   const beats:ShotBeat[]=Array.from({length:count},(_,i)=>{const t=templates[i%templates.length];return{id:`beat-${i+1}`,order:i,...t,durationSeconds,continuityNotes:i===0?"Opening beat — establish locked references.":`Continue from beat-${i}: preserve identity, wardrobe, and lighting continuity.`}});
   return{mode,pacing:mode==="viral"?"rapid":mode==="cinematic"?"slow":"medium",aspectRatio:mode==="viral"?"9:16":"16:9",beats,totalDurationSeconds:beats.reduce((a,b)=>a+b.durationSeconds,0),hookFirst:mode==="viral"}
 }
-/** Hook-first ordering for viral mode: keeps the strongest hook beat first regardless of narrative order. */
-export function hookFirstOrder(beats:ShotBeat[]):ShotBeat[]{const hookIdx=beats.findIndex(b=>/hook/i.test(b.intent));if(hookIdx<=0)return beats;const hook=beats[hookIdx];return[hook,...beats.filter((_,i)=>i!==hookIdx)].map((b,i)=>({...b,order:i}))}
+/** Hook-first ordering for viral mode: keeps the strongest hook beat first regardless of narrative order.
+ *  Regenerates id/continuityNotes for the new sequence so continuity references stay accurate post-reorder. */
+export function hookFirstOrder(beats:ShotBeat[]):ShotBeat[]{
+  const hookIdx=beats.findIndex(b=>/hook/i.test(b.intent));
+  if(hookIdx<=0)return beats;
+  const hook=beats[hookIdx];
+  const reordered=[hook,...beats.filter((_,i)=>i!==hookIdx)];
+  return reordered.map((b,i)=>({...b,id:`beat-${i+1}`,order:i,continuityNotes:i===0?"Opening beat — establish locked references.":`Continue from beat-${i}: preserve identity, wardrobe, and lighting continuity.`}));
+}

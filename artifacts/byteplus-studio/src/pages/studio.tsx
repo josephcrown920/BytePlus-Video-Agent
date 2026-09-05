@@ -23,6 +23,8 @@ const STAGE_LABEL: Record<string, string> = {
   routing: 'ROUTING',
   generating: 'GENERATING',
   inspecting: 'INSPECTING',
+  revising: 'REVISING',
+  rendering: 'RENDERING',
   verifying: 'VERIFYING',
   delivering: 'DELIVERING',
   completed: 'COMPLETED',

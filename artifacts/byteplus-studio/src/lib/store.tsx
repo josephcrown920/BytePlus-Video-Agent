@@ -21,6 +21,8 @@ export type ProductionStage =
   | 'routing'
   | 'generating'
   | 'inspecting'
+  | 'revising'
+  | 'rendering'
   | 'verifying'
   | 'delivering'
   | 'completed'
@@ -39,6 +41,8 @@ const STAGE_NARRATION: Record<ProductionMode, Record<ProductionStage, string>> =
     routing: 'Routing to the cinematic pipeline: storyboard + timeline skills, ModelArk Seedance/Seedream.',
     generating: 'Generating the shot with locked identity, wardrobe and lighting references.',
     inspecting: 'Inspecting the candidate against continuity rules and acceptance criteria.',
+    revising: 'Revising the shot to resolve a targeted continuity or acceptance issue.',
+    rendering: 'Rendering the shot into the sequence timeline.',
     verifying: 'Verifying render integrity and continuity before delivery.',
     delivering: 'Delivering the verified shot to the sequence timeline.',
     completed: 'Cinematic shot delivered and added to the sequence.',
@@ -49,6 +53,8 @@ const STAGE_NARRATION: Record<ProductionMode, Record<ProductionStage, string>> =
     routing: 'Routing to the viral pipeline: caption-ready cut + faceless b-roll skills.',
     generating: 'Generating the hook and fast-cut beats for the short-form clip.',
     inspecting: 'Inspecting pacing, hook strength and caption readiness.',
+    revising: 'Revising the hook or pacing to resolve a targeted issue.',
+    rendering: 'Rendering the fast-cut clip.',
     verifying: 'Verifying the vertical export and loopability before delivery.',
     delivering: 'Delivering the verified clip, ready for captions and posting.',
     completed: 'Viral clip delivered — hook-first and caption-ready.',
@@ -59,6 +65,8 @@ const STAGE_NARRATION: Record<ProductionMode, Record<ProductionStage, string>> =
     routing: 'Routing to the default ModelArk video/image pipeline.',
     generating: 'Generating the requested frame or shot.',
     inspecting: 'Inspecting the candidate against acceptance criteria.',
+    revising: 'Revising the shot to resolve a targeted issue.',
+    rendering: 'Rendering the shot.',
     verifying: 'Verifying render integrity before delivery.',
     delivering: 'Delivering the verified asset to the project.',
     completed: 'Job delivered to the project.',
@@ -275,21 +283,21 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   }, [activeMode, runJobStages]);
 
   const retryJob = useCallback((id: string) => {
-    let mode: ProductionMode = 'standard';
-    setQueue(prev => prev.map(j => {
-      if (j.id !== id) return j;
-      mode = j.mode;
-      return {
-        ...j,
-        status: 'queued',
-        stage: 'planning',
-        progress: 0,
-        retryCount: j.retryCount + 1,
-        narration: [...j.narration, { stage: 'planning', message: 'Retrying job: re-entering the planning stage with the same locks and references.', at: new Date() }],
-      };
-    }));
+    const target = queue.find(j => j.id === id);
+    if (!target) return;
+    const mode = target.mode;
+    setQueue(prev => prev.map(j => (j.id === id
+      ? {
+          ...j,
+          status: 'queued',
+          stage: 'planning',
+          progress: 0,
+          retryCount: j.retryCount + 1,
+          narration: [...j.narration, { stage: 'planning', message: 'Retrying job: re-entering the planning stage with the same locks and references.', at: new Date() }],
+        }
+      : j)));
     runJobStages(id, mode);
-  }, [runJobStages]);
+  }, [queue, runJobStages]);
 
   const reorderShots = useCallback((startIndex: number, endIndex: number) => {
     const result = Array.from(shots);
