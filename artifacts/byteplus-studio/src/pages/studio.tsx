@@ -1,38 +1,61 @@
 import React, { useState } from 'react';
 import { useStudio } from '@/lib/store';
-import { BookmarkPlus, Sparkles, SlidersHorizontal, Image as ImageIcon, Camera, Wand2, Maximize2, Zap } from 'lucide-react';
+import { BookmarkPlus, Sparkles, SlidersHorizontal, Image as ImageIcon, Camera, Wand2, Maximize2, Zap, Film, Rocket, Layers } from 'lucide-react';
 import cyberpunkShot from '@assets/generated_images/shot-cyberpunk.jpg';
 import astronautShot from '@assets/generated_images/shot-astronaut.jpg';
 import desertShot from '@assets/generated_images/shot-desert.jpg';
 import charElara from '@assets/generated_images/char-elara.jpg';
 
+const MODES = [
+  { id: 'cinematic' as const, label: 'Cinematic', icon: Film, description: 'Structured beats, camera/lens/lighting continuity, 16:9.' },
+  { id: 'viral' as const, label: 'Viral', icon: Rocket, description: 'Hook-first, fast pacing, faceless/caption-ready, 9:16.' },
+  { id: 'standard' as const, label: 'Standard', icon: Layers, description: 'Balanced, general-purpose delivery.' },
+];
+
+const MODE_STYLE_TAGS: Record<'cinematic' | 'viral' | 'standard', string[]> = {
+  cinematic: ['Cinematic', '35mm Lens', 'Volumetric Lighting', 'Color Graded', 'Film Grain'],
+  viral: ['Hook-first', 'High Energy', 'Caption-Ready', 'Fast Cuts', 'Faceless B-roll'],
+  standard: ['Balanced', 'Natural Light', 'Clean Grade'],
+};
+
+const STAGE_LABEL: Record<string, string> = {
+  planning: 'PLANNING',
+  routing: 'ROUTING',
+  generating: 'GENERATING',
+  inspecting: 'INSPECTING',
+  verifying: 'VERIFYING',
+  delivering: 'DELIVERING',
+  completed: 'COMPLETED',
+  failed: 'FAILED',
+};
+
 export default function Studio() {
-  const { activePrompt, setActivePrompt, addJob, saveDraft } = useStudio();
+  const { activePrompt, setActivePrompt, activeMode, setActiveMode, addJob, saveDraft, queue } = useStudio();
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewImage, setPreviewImage] = useState(cyberpunkShot);
-  const [progress, setProgress] = useState(0);
+  const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
+
+  const trackedJob = queue.find(j => j.id === trackedJobId);
+  const progress = trackedJob?.progress ?? 0;
+  const currentStage = trackedJob?.stage;
+  const narrationLog = trackedJob?.narration ?? [];
+
+  React.useEffect(() => {
+    if (!trackedJob) return;
+    if (trackedJob.status === 'completed') {
+      setIsGenerating(false);
+      const images = [cyberpunkShot, astronautShot, desertShot];
+      setPreviewImage(images[Math.floor(Math.random() * images.length)]);
+    } else if (trackedJob.status === 'failed') {
+      setIsGenerating(false);
+    }
+  }, [trackedJob?.status]);
 
   const handleGenerate = () => {
     if (!activePrompt.trim()) return;
-    
     setIsGenerating(true);
-    setProgress(0);
-    addJob(activePrompt);
-
-    // Simulate generation for local feedback
-    const interval = setInterval(() => {
-      setProgress(p => {
-        if (p >= 100) {
-          clearInterval(interval);
-          setIsGenerating(false);
-          // Randomize preview slightly to show change, but stick to our generated assets if possible
-          const images = [cyberpunkShot, astronautShot, desertShot];
-          setPreviewImage(images[Math.floor(Math.random() * images.length)]);
-          return 100;
-        }
-        return p + 2; // Fast simulation
-      });
-    }, 50);
+    const id = addJob(activePrompt, activeMode);
+    setTrackedJobId(id);
   };
 
   const saveCurrentFrame = () => {
@@ -48,13 +71,35 @@ export default function Studio() {
     <div className="h-full flex flex-col md:flex-row">
       {/* Main Canvas Area */}
       <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 bg-background relative overflow-hidden">
-        
+
+        {/* Mode Selector */}
+        <div className="flex items-center gap-2 mb-4" role="tablist" aria-label="Production mode">
+          {MODES.map(({ id, label, icon: Icon, description }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeMode === id}
+              title={description}
+              onClick={() => setActiveMode(id)}
+              className={`px-3 py-1.5 text-xs font-mono rounded border flex items-center gap-2 transition-colors ${
+                activeMode === id
+                  ? 'bg-primary/10 border-primary text-primary'
+                  : 'bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/50'
+              }`}
+            >
+              <Icon className="w-3 h-3" />
+              {label} Mode
+            </button>
+          ))}
+        </div>
+
         {/* Toolbar */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex gap-2">
             <button className="px-3 py-1.5 text-xs font-mono rounded bg-card border border-border hover:border-primary/50 text-foreground transition-colors flex items-center gap-2">
               <Camera className="w-3 h-3" />
-              16:9 Cinema
+              {activeMode === 'viral' ? '9:16 Vertical' : '16:9 Cinema'}
             </button>
             <button className="px-3 py-1.5 text-xs font-mono rounded bg-card border border-border hover:border-primary/50 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2">
               <ImageIcon className="w-3 h-3" />
@@ -70,17 +115,23 @@ export default function Studio() {
         <div className="flex-1 relative rounded-lg border border-border bg-card cinematic-shadow overflow-hidden flex items-center justify-center mb-6">
           
           {isGenerating ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 z-20 backdrop-blur-sm">
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 z-20 backdrop-blur-sm px-6">
               <div className="scanline" />
               <div className="relative w-64 h-2 bg-sidebar rounded-full overflow-hidden mb-4 border border-border">
                 <div 
-                  className="absolute top-0 left-0 h-full bg-primary shadow-[0_0_10px_rgba(0,229,255,0.5)] transition-all duration-75 ease-out" 
+                  className="absolute top-0 left-0 h-full bg-primary shadow-[0_0_10px_rgba(0,229,255,0.5)] transition-all duration-300 ease-out" 
                   style={{ width: `${progress}%` }} 
                 />
               </div>
-              <div className="font-mono text-primary text-sm tracking-widest flex items-center gap-2">
+              <div className="font-mono text-primary text-sm tracking-widest flex items-center gap-2 mb-3">
                 <Wand2 className="w-4 h-4 animate-spin-slow" />
-                SYNTHESIZING FRAME {progress}%
+                {currentStage ? STAGE_LABEL[currentStage] : 'QUEUED'} {progress}%
+              </div>
+              {/* Agent narration: truthful, stage-by-stage commentary of what is actually happening */}
+              <div className="w-full max-w-md text-center text-xs text-muted-foreground font-mono space-y-1 max-h-20 overflow-y-auto">
+                {narrationLog.slice(-3).map((n, i) => (
+                  <div key={i}>{n.message}</div>
+                ))}
               </div>
             </div>
           ) : null}
@@ -108,7 +159,7 @@ export default function Studio() {
           <textarea 
             value={activePrompt}
             onChange={(e) => setActivePrompt(e.target.value)}
-            placeholder="Describe the shot..."
+            placeholder={activeMode === 'viral' ? 'Describe the hook and payoff for a short-form clip...' : activeMode === 'cinematic' ? 'Describe the scene, beat, and camera intent...' : 'Describe the shot...'}
             className="w-full bg-card border border-border rounded-lg pl-12 pr-32 py-4 text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary resize-none font-mono text-sm h-24 shadow-inner"
           />
           <div className="absolute bottom-4 right-4 flex gap-2">
@@ -157,7 +208,7 @@ export default function Studio() {
           <div className="space-y-4">
             <label className="text-xs font-mono text-muted-foreground uppercase flex justify-between">
               Camera Motion
-              <span className="text-primary">Dynamic</span>
+              <span className="text-primary">{activeMode === 'viral' ? 'Rapid' : 'Dynamic'}</span>
             </label>
             
             <div className="space-y-4">
@@ -186,7 +237,7 @@ export default function Studio() {
           <div className="space-y-3">
             <label className="text-xs font-mono text-muted-foreground uppercase">Style Modifiers</label>
             <div className="flex flex-wrap gap-2">
-              {['Cinematic', '35mm Lens', 'Volumetric Lighting', 'Color Graded', 'Film Grain'].map(tag => (
+              {MODE_STYLE_TAGS[activeMode].map(tag => (
                 <span key={tag} className="px-2 py-1 rounded bg-background border border-border text-xs text-foreground cursor-pointer hover:border-primary/50 transition-colors">
                   {tag}
                 </span>

@@ -1,9 +1,11 @@
 import React from 'react';
 import { useStudio, RenderJob } from '@/lib/store';
-import { CheckCircle2, Clock, AlertCircle, RefreshCw, Eye, Wand2 } from 'lucide-react';
+import { CheckCircle2, Clock, AlertCircle, RefreshCw, Eye, Wand2, Film, Rocket, Layers } from 'lucide-react';
+
+const MODE_ICON = { cinematic: Film, viral: Rocket, standard: Layers } as const;
 
 export default function Queue() {
-  const { queue } = useStudio();
+  const { queue, retryJob } = useStudio();
 
   return (
     <div className="h-full flex flex-col bg-background p-6 lg:p-8">
@@ -34,7 +36,7 @@ export default function Queue() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {queue.map((job) => (
-            <QueueCard key={job.id} job={job} />
+            <QueueCard key={job.id} job={job} onRetry={() => retryJob(job.id)} />
           ))}
         </div>
       )}
@@ -42,12 +44,14 @@ export default function Queue() {
   );
 }
 
-function QueueCard({ job }: { job: RenderJob }) {
+function QueueCard({ job, onRetry }: { job: RenderJob; onRetry: () => void }) {
   const isRendering = job.status === 'rendering';
   const isCompleted = job.status === 'completed';
   const isQueued = job.status === 'queued';
   const isFailed = job.status === 'failed';
   const displayImage = isCompleted && job.resultImage ? job.resultImage : job.sourceFrame;
+  const ModeIcon = MODE_ICON[job.mode];
+  const lastNarration = job.narration[job.narration.length - 1];
 
   return (
     <div className="group rounded-xl border border-border bg-card overflow-hidden hover:border-primary/40 transition-colors">
@@ -60,24 +64,39 @@ function QueueCard({ job }: { job: RenderJob }) {
         />
 
         {(isQueued || isRendering) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/40">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/40 px-4 text-center">
             {isRendering && <div className="scanline" />}
             <Wand2 className={`w-6 h-6 text-primary mb-2 ${isRendering ? 'animate-spin-slow' : 'opacity-60'}`} />
             <span className="font-mono text-[11px] tracking-widest text-primary/90">
-              {isRendering ? `SYNTHESIZING ${Math.round(job.progress)}%` : 'QUEUED FOR GPU'}
+              {isRendering ? `${job.stage.toUpperCase()} ${Math.round(job.progress)}%` : 'QUEUED FOR GPU'}
             </span>
+            {isRendering && lastNarration && (
+              <span className="mt-1 font-mono text-[10px] text-primary/70 line-clamp-2">{lastNarration.message}</span>
+            )}
           </div>
         )}
 
         {isFailed && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/10">
-            <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/10 px-4 text-center gap-2">
+            <AlertCircle className="w-6 h-6 text-destructive" />
             <span className="font-mono text-[11px] tracking-widest text-destructive">RENDER FAILED</span>
+            {lastNarration && <span className="font-mono text-[10px] text-destructive/80 line-clamp-2">{lastNarration.message}</span>}
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-1 px-3 py-1 rounded bg-destructive/20 border border-destructive/40 text-destructive text-xs font-medium flex items-center gap-1.5 hover:bg-destructive/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Retry job
+            </button>
           </div>
         )}
 
-        <div className="absolute top-3 left-3">
+        <div className="absolute top-3 left-3 flex items-center gap-1.5">
           <StatusPill status={job.status} />
+          <span className="inline-flex items-center gap-1 px-1.5 py-1 rounded backdrop-blur-sm text-[10px] font-mono border bg-background/60 border-border text-muted-foreground" title={`${job.mode} mode`}>
+            <ModeIcon className="w-3 h-3" />
+          </span>
         </div>
 
         {isCompleted && (
@@ -101,7 +120,7 @@ function QueueCard({ job }: { job: RenderJob }) {
           />
         </div>
         <div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground uppercase">
-          <span>ID: {job.id}</span>
+          <span>ID: {job.id}{job.retryCount > 0 ? ` (retry ${job.retryCount})` : ''}</span>
           <span>{isCompleted ? job.duration : isRendering ? 'GPU-01' : '--'}</span>
         </div>
       </div>

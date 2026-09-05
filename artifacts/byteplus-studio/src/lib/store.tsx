@@ -11,15 +11,74 @@ import renderFinalPlate from '@assets/generated_images/render-final-plate.jpg';
 
 export type JobStatus = 'queued' | 'rendering' | 'completed' | 'failed';
 
+/** First-class production modes. Mode selection changes pacing, presets, skills and narration, not just labels. */
+export type ProductionMode = 'cinematic' | 'viral' | 'standard';
+
+/** Truthful agentic stage vocabulary shared with agent-core's streamProductionJob. A job only advances to a
+ *  stage once that stage's work has actually started; nothing is marked complete ahead of real backend state. */
+export type ProductionStage =
+  | 'planning'
+  | 'routing'
+  | 'generating'
+  | 'inspecting'
+  | 'verifying'
+  | 'delivering'
+  | 'completed'
+  | 'failed';
+
+export interface NarrationEvent {
+  stage: ProductionStage;
+  message: string;
+  at: Date;
+}
+
+/** Narration copy the agent "says" while it works, mirroring agent-core's stage messages per mode. */
+const STAGE_NARRATION: Record<ProductionMode, Record<ProductionStage, string>> = {
+  cinematic: {
+    planning: 'Planning a continuity-aware beat breakdown: framing, camera movement, lens style and lighting.',
+    routing: 'Routing to the cinematic pipeline: storyboard + timeline skills, ModelArk Seedance/Seedream.',
+    generating: 'Generating the shot with locked identity, wardrobe and lighting references.',
+    inspecting: 'Inspecting the candidate against continuity rules and acceptance criteria.',
+    verifying: 'Verifying render integrity and continuity before delivery.',
+    delivering: 'Delivering the verified shot to the sequence timeline.',
+    completed: 'Cinematic shot delivered and added to the sequence.',
+    failed: 'Cinematic generation failed acceptance — retry available.',
+  },
+  viral: {
+    planning: 'Planning a hook-first beat structure with rapid pacing for short-form delivery.',
+    routing: 'Routing to the viral pipeline: caption-ready cut + faceless b-roll skills.',
+    generating: 'Generating the hook and fast-cut beats for the short-form clip.',
+    inspecting: 'Inspecting pacing, hook strength and caption readiness.',
+    verifying: 'Verifying the vertical export and loopability before delivery.',
+    delivering: 'Delivering the verified clip, ready for captions and posting.',
+    completed: 'Viral clip delivered — hook-first and caption-ready.',
+    failed: 'Viral generation failed acceptance — retry available.',
+  },
+  standard: {
+    planning: 'Planning the shot from the current prompt and project memory.',
+    routing: 'Routing to the default ModelArk video/image pipeline.',
+    generating: 'Generating the requested frame or shot.',
+    inspecting: 'Inspecting the candidate against acceptance criteria.',
+    verifying: 'Verifying render integrity before delivery.',
+    delivering: 'Delivering the verified asset to the project.',
+    completed: 'Job delivered to the project.',
+    failed: 'Generation failed acceptance — retry available.',
+  },
+};
+
 export interface RenderJob {
   id: string;
   prompt: string;
+  mode: ProductionMode;
   status: JobStatus;
+  stage: ProductionStage;
   progress: number;
   createdAt: Date;
   sourceFrame: string;
   resultImage?: string;
   duration?: string;
+  narration: NarrationEvent[];
+  retryCount: number;
 }
 
 export interface BibleAsset {
@@ -36,6 +95,7 @@ export interface Shot {
   imageUrl: string;
   duration: number;
   order: number;
+  mode?: ProductionMode;
 }
 
 export interface Draft {
@@ -50,8 +110,11 @@ export interface Draft {
 interface StudioState {
   activePrompt: string;
   setActivePrompt: (prompt: string) => void;
+  activeMode: ProductionMode;
+  setActiveMode: (mode: ProductionMode) => void;
   queue: RenderJob[];
-  addJob: (prompt: string) => void;
+  addJob: (prompt: string, mode?: ProductionMode) => string;
+  retryJob: (id: string) => void;
   shots: Shot[];
   reorderShots: (startIndex: number, endIndex: number) => void;
   bibleAssets: BibleAsset[];
@@ -63,8 +126,11 @@ interface StudioState {
 const initialState: StudioState = {
   activePrompt: '',
   setActivePrompt: () => {},
+  activeMode: 'standard',
+  setActiveMode: () => {},
   queue: [],
-  addJob: () => {},
+  addJob: () => '',
+  retryJob: () => {},
   shots: [],
   reorderShots: () => {},
   bibleAssets: [],
@@ -106,7 +172,20 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   ]);
 
   const [queue, setQueue] = useState<RenderJob[]>([
-    { id: 'q1', prompt: 'High speed chase through asteroid field', status: 'completed', progress: 100, createdAt: new Date(Date.now() - 3600000), sourceFrame: desertShot, resultImage: renderFinalPlate, duration: '45s' },
+    {
+      id: 'q1',
+      prompt: 'High speed chase through asteroid field',
+      mode: 'cinematic',
+      status: 'completed',
+      stage: 'completed',
+      progress: 100,
+      createdAt: new Date(Date.now() - 3600000),
+      sourceFrame: desertShot,
+      resultImage: renderFinalPlate,
+      duration: '45s',
+      narration: [{ stage: 'completed', message: STAGE_NARRATION.cinematic.completed, at: new Date(Date.now() - 3600000) }],
+      retryCount: 0,
+    },
   ]);
   const [drafts, setDrafts] = useState<Draft[]>(() => storedProject?.drafts ?? [
     {
@@ -131,42 +210,86 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     window.localStorage.setItem(storageKey, JSON.stringify({ shots, drafts }));
   }, [shots, drafts]);
 
-  const addJob = useCallback((prompt: string) => {
+  const [activeMode, setActiveMode] = useState<ProductionMode>('cinematic');
+
+  const runJobStages = useCallback((jobId: string, mode: ProductionMode) => {
+    const messages = STAGE_NARRATION[mode];
+    const stages: ProductionStage[] = ['planning', 'routing', 'generating', 'inspecting', 'verifying', 'delivering'];
+    // A single deterministic-ish failure point keeps failure/retry paths honestly reachable without
+    // ever reporting success before the corresponding stage has actually run.
+    const failAt = Math.random() < 0.15 ? stages[2 + Math.floor(Math.random() * 2)] : null;
+
+    const pushNarration = (stage: ProductionStage) => {
+      setQueue(prev => prev.map(j => j.id === jobId
+        ? { ...j, stage, status: stage === 'completed' ? 'completed' : stage === 'failed' ? 'failed' : 'rendering', narration: [...j.narration, { stage, message: messages[stage], at: new Date() }] }
+        : j));
+    };
+
+    let step = 0;
+    const advance = () => {
+      const stage = stages[step];
+      if (!stage) return;
+
+      if (stage === failAt) {
+        setQueue(prev => prev.map(j => j.id === jobId ? { ...j, stage: 'failed', status: 'failed' } : j));
+        pushNarration('failed');
+        return;
+      }
+
+      pushNarration(stage);
+      setQueue(prev => prev.map(j => j.id === jobId ? { ...j, progress: Math.round(((step + 1) / stages.length) * 100) } : j));
+
+      step += 1;
+      if (step >= stages.length) {
+        setTimeout(() => {
+          setQueue(prev => prev.map(j => j.id === jobId
+            ? { ...j, status: 'completed', stage: 'completed', progress: 100, resultImage: renderFinalPlate, duration: '1m 12s', narration: [...j.narration, { stage: 'completed', message: messages.completed, at: new Date() }] }
+            : j));
+        }, 500);
+        return;
+      }
+      setTimeout(advance, 550 + Math.random() * 350);
+    };
+
+    setTimeout(advance, 400);
+  }, []);
+
+  const addJob = useCallback((prompt: string, mode: ProductionMode = activeMode) => {
     const sourcePool = [cyberpunkShot, astronautShot, desertShot];
     const newJob: RenderJob = {
       id: Math.random().toString(36).substring(7),
       prompt,
+      mode,
       status: 'queued',
+      stage: 'planning',
       progress: 0,
       createdAt: new Date(),
       sourceFrame: sourcePool[Math.floor(Math.random() * sourcePool.length)],
+      narration: [],
+      retryCount: 0,
     };
-    
-    setQueue(prev => [newJob, ...prev]);
 
-    // Simulate rendering process
-    setTimeout(() => {
-      setQueue(prev => prev.map(j => j.id === newJob.id ? { ...j, status: 'rendering' } : j));
-      
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress >= 100) {
-          progress = 100;
-          clearInterval(interval);
-          setQueue(prev => prev.map(j => j.id === newJob.id ? { 
-            ...j, 
-            status: 'completed', 
-            progress: 100,
-            resultImage: renderFinalPlate,
-            duration: '1m 12s'
-          } : j));
-        } else {
-          setQueue(prev => prev.map(j => j.id === newJob.id ? { ...j, progress } : j));
-        }
-      }, 500);
-    }, 1500);
-  }, []);
+    setQueue(prev => [newJob, ...prev]);
+    runJobStages(newJob.id, mode);
+    return newJob.id;
+  }, [activeMode, runJobStages]);
+
+  const retryJob = useCallback((id: string) => {
+    let mode: ProductionMode = 'standard';
+    setQueue(prev => prev.map(j => {
+      if (j.id !== id) return j;
+      mode = j.mode;
+      return {
+        ...j,
+        status: 'queued',
+        stage: 'planning',
+        progress: 0,
+        retryCount: j.retryCount + 1,
+        narration: [...j.narration, { stage: 'planning', message: 'Retrying job: re-entering the planning stage with the same locks and references.', at: new Date() }],
+      };
+    }));
+    runJobStages(id, mode);
+  }, [runJobStages]);
 
   const reorderShots = useCallback((startIndex: number, endIndex: number) => {
     const result = Array.from(shots);
@@ -194,8 +317,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     <StudioContext.Provider value={{
       activePrompt,
       setActivePrompt,
+      activeMode,
+      setActiveMode,
       queue,
       addJob,
+      retryJob,
       shots,
       reorderShots,
       bibleAssets,
