@@ -52,6 +52,8 @@ function QueueCard({ job, onRetry, onDeliver }: { job: RenderJob; onRetry: () =>
   const isQueued = job.status === 'queued';
   const isFailed = job.status === 'failed';
   const displayImage = isCompleted && job.resultImage ? job.resultImage : job.sourceFrame;
+  const ModeIcon = MODE_ICON[job.mode];
+  const lastNarration = job.narration[job.narration.length - 1];
 
   return (
     <div className="group rounded-xl border border-border bg-card overflow-hidden hover:border-primary/40 transition-colors flex flex-col justify-between">
@@ -66,12 +68,15 @@ function QueueCard({ job, onRetry, onDeliver }: { job: RenderJob; onRetry: () =>
         />
 
         {(isQueued || isRendering) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/40">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/40 px-4 text-center">
             {isRendering && <div className="scanline" />}
             <Wand2 className={`w-6 h-6 text-primary mb-2 ${isRendering ? 'animate-spin-slow' : 'opacity-60'}`} />
             <span className="font-mono text-[11px] tracking-widest text-primary/90">
               {isRendering ? `STAGE: ${(job.stage || 'SYNTHESIZING').toUpperCase()} (${Math.round(job.progress)}%)` : 'QUEUED FOR GPU'}
             </span>
+            {isRendering && lastNarration && (
+              <span className="mt-1 font-mono text-[10px] text-primary/70 line-clamp-2">{lastNarration.message}</span>
+            )}
           </div>
         )}
 

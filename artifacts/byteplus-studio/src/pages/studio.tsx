@@ -21,6 +21,31 @@ import astronautShot from '@assets/generated_images/shot-astronaut.jpg';
 import desertShot from '@assets/generated_images/shot-desert.jpg';
 import charElara from '@assets/generated_images/char-elara.jpg';
 
+const MODES = [
+  { id: 'cinematic' as const, label: 'Cinematic', icon: Film, description: 'Structured beats, camera/lens/lighting continuity, 16:9.' },
+  { id: 'viral' as const, label: 'Viral', icon: Rocket, description: 'Hook-first, fast pacing, faceless/caption-ready, 9:16.' },
+  { id: 'standard' as const, label: 'Standard', icon: Layers, description: 'Balanced, general-purpose delivery.' },
+];
+
+const MODE_STYLE_TAGS: Record<'cinematic' | 'viral' | 'standard', string[]> = {
+  cinematic: ['Cinematic', '35mm Lens', 'Volumetric Lighting', 'Color Graded', 'Film Grain'],
+  viral: ['Hook-first', 'High Energy', 'Caption-Ready', 'Fast Cuts', 'Faceless B-roll'],
+  standard: ['Balanced', 'Natural Light', 'Clean Grade'],
+};
+
+const STAGE_LABEL: Record<string, string> = {
+  planning: 'PLANNING',
+  routing: 'ROUTING',
+  generating: 'GENERATING',
+  inspecting: 'INSPECTING',
+  revising: 'REVISING',
+  rendering: 'RENDERING',
+  verifying: 'VERIFYING',
+  delivering: 'DELIVERING',
+  completed: 'COMPLETED',
+  failed: 'FAILED',
+};
+
 export default function Studio() {
   const {
     mode,
@@ -37,7 +62,23 @@ export default function Studio() {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewImage, setPreviewImage] = useState(cyberpunkShot);
-  const [progress, setProgress] = useState(0);
+  const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
+
+  const trackedJob = queue.find(j => j.id === trackedJobId);
+  const progress = trackedJob?.progress ?? 0;
+  const currentStage = trackedJob?.stage;
+  const narrationLog = trackedJob?.narration ?? [];
+
+  React.useEffect(() => {
+    if (!trackedJob) return;
+    if (trackedJob.status === 'completed') {
+      setIsGenerating(false);
+      const images = [cyberpunkShot, astronautShot, desertShot];
+      setPreviewImage(images[Math.floor(Math.random() * images.length)]);
+    } else if (trackedJob.status === 'failed') {
+      setIsGenerating(false);
+    }
+  }, [trackedJob?.status]);
 
   const handleGenerate = () => {
     if (!activePrompt.trim()) return;
@@ -142,7 +183,7 @@ export default function Studio() {
         {/* Viewer */}
         <div className="flex-1 relative rounded-xl border border-border bg-card cinematic-shadow overflow-hidden flex items-center justify-center mb-6">
           {isGenerating ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 z-20 backdrop-blur-sm">
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 z-20 backdrop-blur-sm px-6">
               <div className="scanline" />
               <div className="relative w-64 h-2 bg-sidebar rounded-full overflow-hidden mb-4 border border-border">
                 <div

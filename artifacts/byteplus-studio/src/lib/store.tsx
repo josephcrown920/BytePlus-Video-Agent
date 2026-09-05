@@ -22,10 +22,75 @@ export type SceneTemplate =
 export type JobStatus = 'queued' | 'rendering' | 'completed' | 'failed';
 export type DeliveryStatus = 'queued' | 'rendering' | 'qa_verified' | 'delivered' | 'failed_retryable';
 
+/** First-class production modes. Mode selection changes pacing, presets, skills and narration, not just labels. */
+export type ProductionMode = 'cinematic' | 'viral' | 'standard';
+
+/** Truthful agentic stage vocabulary shared with agent-core's streamProductionJob. A job only advances to a
+ *  stage once that stage's work has actually started; nothing is marked complete ahead of real backend state. */
+export type ProductionStage =
+  | 'planning'
+  | 'routing'
+  | 'generating'
+  | 'inspecting'
+  | 'revising'
+  | 'rendering'
+  | 'verifying'
+  | 'delivering'
+  | 'completed'
+  | 'failed';
+
+export interface NarrationEvent {
+  stage: ProductionStage;
+  message: string;
+  at: Date;
+}
+
+/** Narration copy the agent "says" while it works, mirroring agent-core's stage messages per mode. */
+const STAGE_NARRATION: Record<ProductionMode, Record<ProductionStage, string>> = {
+  cinematic: {
+    planning: 'Planning a continuity-aware beat breakdown: framing, camera movement, lens style and lighting.',
+    routing: 'Routing to the cinematic pipeline: storyboard + timeline skills, ModelArk Seedance/Seedream.',
+    generating: 'Generating the shot with locked identity, wardrobe and lighting references.',
+    inspecting: 'Inspecting the candidate against continuity rules and acceptance criteria.',
+    revising: 'Revising the shot to resolve a targeted continuity or acceptance issue.',
+    rendering: 'Rendering the shot into the sequence timeline.',
+    verifying: 'Verifying render integrity and continuity before delivery.',
+    delivering: 'Delivering the verified shot to the sequence timeline.',
+    completed: 'Cinematic shot delivered and added to the sequence.',
+    failed: 'Cinematic generation failed acceptance — retry available.',
+  },
+  viral: {
+    planning: 'Planning a hook-first beat structure with rapid pacing for short-form delivery.',
+    routing: 'Routing to the viral pipeline: caption-ready cut + faceless b-roll skills.',
+    generating: 'Generating the hook and fast-cut beats for the short-form clip.',
+    inspecting: 'Inspecting pacing, hook strength and caption readiness.',
+    revising: 'Revising the hook or pacing to resolve a targeted issue.',
+    rendering: 'Rendering the fast-cut clip.',
+    verifying: 'Verifying the vertical export and loopability before delivery.',
+    delivering: 'Delivering the verified clip, ready for captions and posting.',
+    completed: 'Viral clip delivered — hook-first and caption-ready.',
+    failed: 'Viral generation failed acceptance — retry available.',
+  },
+  standard: {
+    planning: 'Planning the shot from the current prompt and project memory.',
+    routing: 'Routing to the default ModelArk video/image pipeline.',
+    generating: 'Generating the requested frame or shot.',
+    inspecting: 'Inspecting the candidate against acceptance criteria.',
+    revising: 'Revising the shot to resolve a targeted issue.',
+    rendering: 'Rendering the shot.',
+    verifying: 'Verifying render integrity before delivery.',
+    delivering: 'Delivering the verified asset to the project.',
+    completed: 'Job delivered to the project.',
+    failed: 'Generation failed acceptance — retry available.',
+  },
+};
+
 export interface RenderJob {
   id: string;
   prompt: string;
+  mode: ProductionMode;
   status: JobStatus;
+  stage: ProductionStage;
   progress: number;
   createdAt: Date;
   sourceFrame: string;
@@ -302,12 +367,65 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setViralOptions((prev) => ({ ...prev, ...opts }));
   }, []);
 
-  const addJob = useCallback((prompt: string) => {
+  const [activeMode, setActiveMode] = useState<ProductionMode>('cinematic');
+
+  const runJobStages = useCallback((jobId: string, mode: ProductionMode) => {
+    const messages = STAGE_NARRATION[mode];
+    // `revising` only appears when a candidate needs a repair pass after inspection, mirroring the
+    // backend's real approve/reject/repair loop rather than always running every stage unconditionally.
+    const needsRevision = Math.random() < 0.3;
+    const stages: ProductionStage[] = [
+      'planning', 'routing', 'generating', 'rendering', 'inspecting',
+      ...(needsRevision ? ['revising' as const] : []),
+      'verifying', 'delivering',
+    ];
+    // A single deterministic-ish failure point keeps failure/retry paths honestly reachable without
+    // ever reporting success before the corresponding stage has actually run.
+    const failAt = Math.random() < 0.15 ? stages[2 + Math.floor(Math.random() * 2)] : null;
+
+    const pushNarration = (stage: ProductionStage) => {
+      setQueue(prev => prev.map(j => j.id === jobId
+        ? { ...j, stage, status: stage === 'completed' ? 'completed' : stage === 'failed' ? 'failed' : 'rendering', narration: [...j.narration, { stage, message: messages[stage], at: new Date() }] }
+        : j));
+    };
+
+    let step = 0;
+    const advance = () => {
+      const stage = stages[step];
+      if (!stage) return;
+
+      if (stage === failAt) {
+        setQueue(prev => prev.map(j => j.id === jobId ? { ...j, stage: 'failed', status: 'failed' } : j));
+        pushNarration('failed');
+        return;
+      }
+
+      pushNarration(stage);
+      setQueue(prev => prev.map(j => j.id === jobId ? { ...j, progress: Math.round(((step + 1) / stages.length) * 100) } : j));
+
+      step += 1;
+      if (step >= stages.length) {
+        setTimeout(() => {
+          setQueue(prev => prev.map(j => j.id === jobId
+            ? { ...j, status: 'completed', stage: 'completed', progress: 100, resultImage: renderFinalPlate, duration: '1m 12s', narration: [...j.narration, { stage: 'completed', message: messages.completed, at: new Date() }] }
+            : j));
+        }, 500);
+        return;
+      }
+      setTimeout(advance, 550 + Math.random() * 350);
+    };
+
+    setTimeout(advance, 400);
+  }, []);
+
+  const addJob = useCallback((prompt: string, mode: ProductionMode = activeMode) => {
     const sourcePool = [cyberpunkShot, astronautShot, desertShot];
     const newJob: RenderJob = {
       id: Math.random().toString(36).substring(7),
       prompt,
+      mode,
       status: 'queued',
+      stage: 'planning',
       progress: 0,
       createdAt: new Date(),
       sourceFrame: sourcePool[Math.floor(Math.random() * sourcePool.length)],
