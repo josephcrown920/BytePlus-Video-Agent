@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for BytePlus Video Agent
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: video
+    description: Video Agent Mode Directing & Production
 paths:
   /healthz:
     get:
@@ -24,6 +26,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /video/plan:
+    post:
+      operationId: createVideoPlan
+      tags: [video]
+      summary: Generate Mode-Driven Video Plan
+      description: Creates a structured shot plan and beat breakdown for Cinematic, Viral, or InVideo Studio modes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoPlanRequest"
+      responses:
+        "200":
+          description: Video plan generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoPlanResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +54,69 @@ components:
           type: string
       required:
         - status
+    VideoMode:
+      type: string
+      enum:
+        - cinematic
+        - viral
+        - standard
+    VideoPlanRequest:
+      type: object
+      properties:
+        instruction:
+          type: string
+        mode:
+          $ref: "#/components/schemas/VideoMode"
+        preset:
+          type: string
+      required:
+        - instruction
+    ShotBeatDto:
+      type: object
+      properties:
+        order:
+          type: number
+        beatType:
+          type: string
+        prompt:
+          type: string
+        durationSec:
+          type: number
+        camera:
+          type: string
+        motion:
+          type: string
+        transition:
+          type: string
+        captionText:
+          type: string
+      required:
+        - order
+        - beatType
+        - prompt
+        - durationSec
+    VideoPlanResponse:
+      type: object
+      properties:
+        mode:
+          $ref: "#/components/schemas/VideoMode"
+        title:
+          type: string
+        summary:
+          type: string
+        totalDurationSec:
+          type: number
+        aspectRatio:
+          type: string
+        shots:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShotBeatDto"
+      required:
+        - mode
+        - title
+        - totalDurationSec
+        - aspectRatio
+        - shots
+
 
