@@ -5,7 +5,10 @@
  * API specification for BytePlus Video Agent
  * OpenAPI spec version: 0.1.0
  */
+import type { VideoMode } from './videoMode';
 
-export interface HealthStatus {
-  status: string;
+export interface VideoPlanRequest {
+  instruction: string;
+  mode?: VideoMode;
+  preset?: string;
 }
