@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-export type TaskStatus = "queued" | "processing" | "completed" | "failed" | "requires_api";
+export type TaskStatus = "queued" | "processing" | "completed" | "failed" | "cancelled" | "requires_api";
 export type TaskType = "image" | "video" | "upscale" | "multi-shot";
 export type PresetKind = "image" | "video";
 
@@ -8,6 +8,7 @@ export interface GeneratorSettings {
   prompt: string;
   negativePrompt?: string;
   ratio: string;
+  model: string;
   style?: string;
   duration?: string;
   camera?: string;
@@ -52,6 +53,9 @@ export interface GenerationTask {
   createdAt: number;
   projectId?: string;
   metadata?: Partial<GeneratorSettings> & { projectName?: string; shots?: Shot[] };
+  generationId?: string;
+  queuePosition?: number;
+  logs?: string[];
   resultUrl?: string;
   error?: string;
 }
@@ -92,7 +96,8 @@ interface WorkspaceContextType extends WorkspaceState {
   deletePreset: (id: string) => void;
   duplicatePreset: (id: string) => void;
   renamePreset: (id: string, name: string) => void;
-  addTask: (task: Omit<GenerationTask, "id" | "createdAt" | "status" | "progress">) => void;
+  addTask: (task: Omit<GenerationTask, "id" | "createdAt" | "status" | "progress"> & Partial<Pick<GenerationTask, "status" | "progress">>) => string;
+  updateTask: (id: string, updates: Partial<GenerationTask>) => void;
   removeTask: (id: string) => void;
   clearTasks: () => void;
   addCharacter: (character: Omit<Character, "id">) => void;
@@ -103,8 +108,10 @@ interface WorkspaceContextType extends WorkspaceState {
 
 const uid = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
 const now = () => Date.now();
-const defaultImage = (): GeneratorSettings => ({ prompt: "", negativePrompt: "", ratio: "16:9", style: "cinematic" });
-const defaultVideo = (): GeneratorSettings => ({ prompt: "", ratio: "16:9", duration: "4s", camera: "static", motion: 50 });
+const IMAGE_MODELS = ["seedream-4.5", "flux-dev", "nano-banana-pro"] as const;
+const VIDEO_MODELS = ["seedance-2.5", "wan-2.5"] as const;
+const defaultImage = (): GeneratorSettings => ({ prompt: "", negativePrompt: "", ratio: "16:9", model: "seedream-4.5", style: "cinematic" });
+const defaultVideo = (): GeneratorSettings => ({ prompt: "", ratio: "16:9", model: "seedance-2.5", duration: "5s", camera: "static", motion: 50 });
 const starterShots = (): Shot[] => [
   { id: uid(), type: "image", prompt: "Establishing shot of a neon-lit city alleyway.", duration: 2, camera: "static", ratio: "16:9", continuityNotes: "Introduce the environment.", status: "ready" },
   { id: uid(), type: "video", prompt: "Camera pans down to reveal the lead character.", duration: 4, camera: "pan_right", ratio: "16:9", continuityNotes: "Match the lighting and wardrobe.", status: "ready" },
@@ -144,19 +151,24 @@ function isProject(value: unknown): value is Project {
 function isSettings(value: unknown): value is GeneratorSettings {
   if (!value || typeof value !== "object") return false;
   const settings = value as Partial<GeneratorSettings>;
-  return typeof settings.prompt === "string" && typeof settings.ratio === "string";
+  return typeof settings.prompt === "string"
+    && typeof settings.ratio === "string"
+    && (settings.model === undefined || typeof settings.model === "string");
 }
 
 function isImageSettings(value: unknown): value is GeneratorSettings {
   if (!isSettings(value)) return false;
   const settings = value as GeneratorSettings;
-  return typeof settings.style === "string" && (settings.negativePrompt === undefined || typeof settings.negativePrompt === "string");
+  return typeof settings.style === "string"
+    && (settings.model === undefined || IMAGE_MODELS.includes(settings.model as typeof IMAGE_MODELS[number]))
+    && (settings.negativePrompt === undefined || typeof settings.negativePrompt === "string");
 }
 
 function isVideoSettings(value: unknown): value is GeneratorSettings {
   if (!isSettings(value)) return false;
   const settings = value as GeneratorSettings;
   return typeof settings.duration === "string"
+    && (settings.model === undefined || VIDEO_MODELS.includes(settings.model as typeof VIDEO_MODELS[number]))
     && typeof settings.camera === "string"
     && typeof settings.motion === "number"
     && Number.isFinite(settings.motion)
@@ -198,7 +210,7 @@ function isTask(value: unknown): value is GenerationTask {
   return typeof task.id === "string"
     && ["image", "video", "upscale", "multi-shot"].includes(task.type ?? "")
     && typeof task.prompt === "string"
-    && ["queued", "processing", "completed", "failed", "requires_api"].includes(task.status ?? "")
+    && ["queued", "processing", "completed", "failed", "cancelled", "requires_api"].includes(task.status ?? "")
     && typeof task.progress === "number"
     && typeof task.createdAt === "number";
 }
@@ -223,7 +235,26 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       try {
         const parsed = JSON.parse(saved) as Partial<WorkspaceState>;
         if (parsed.version === 2 && Array.isArray(parsed.projects) && parsed.projects.some(isProject)) {
-          const projects = parsed.projects.filter(isProject);
+          const projects = parsed.projects.filter(isProject).map(project => ({
+            ...project,
+            imageSettings: {
+              ...defaultImage(),
+              ...project.imageSettings,
+              model: IMAGE_MODELS.includes(project.imageSettings.model as typeof IMAGE_MODELS[number])
+                ? project.imageSettings.model
+                : "seedream-4.5",
+            },
+            videoSettings: {
+              ...defaultVideo(),
+              ...project.videoSettings,
+              model: VIDEO_MODELS.includes(project.videoSettings.model as typeof VIDEO_MODELS[number])
+                ? project.videoSettings.model
+                : "seedance-2.5",
+              duration: ["4s", "5s", "8s", "10s"].includes(project.videoSettings.duration ?? "")
+                ? project.videoSettings.duration
+                : "5s",
+            },
+          }));
           setState({ ...initialState, ...parsed, projects, activeProjectId: projects.some(p => p.id === parsed.activeProjectId) ? parsed.activeProjectId! : projects[0].id } as WorkspaceState);
         }
       } catch {
@@ -298,7 +329,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     return source ? { ...prev, presets: [{ ...source, id: uid(), name: `${source.name} Copy`, createdAt: now() }, ...prev.presets] } : prev;
   });
   const renamePreset = (id: string, name: string) => setState(prev => ({ ...prev, presets: prev.presets.map(p => p.id === id ? { ...p, name: name.trim() || p.name } : p) }));
-  const addTask = (task: Omit<GenerationTask, "id" | "createdAt" | "status" | "progress">) => setState(prev => ({ ...prev, tasks: [{ ...task, projectId: task.projectId ?? prev.activeProjectId, id: uid(), createdAt: now(), status: "requires_api", progress: 0, error: "Server-side BytePlus connection required" }, ...prev.tasks] }));
+  const addTask = (task: Omit<GenerationTask, "id" | "createdAt" | "status" | "progress"> & Partial<Pick<GenerationTask, "status" | "progress">>) => {
+    const id = uid();
+    setState(prev => ({
+      ...prev,
+      tasks: [{
+        ...task,
+        projectId: task.projectId ?? prev.activeProjectId,
+        id,
+        createdAt: now(),
+        status: task.status ?? "requires_api",
+        progress: task.progress ?? 0,
+        error: task.error ?? (task.status ? undefined : "Server-side BytePlus connection required"),
+      }, ...prev.tasks],
+    }));
+    return id;
+  };
+  const updateTask = (id: string, updates: Partial<GenerationTask>) =>
+    setState(prev => ({ ...prev, tasks: prev.tasks.map(task => task.id === id ? { ...task, ...updates } : task) }));
   const removeTask = (id: string) => setState(prev => ({ ...prev, tasks: prev.tasks.filter(t => t.id !== id) }));
   const clearTasks = () => setState(prev => ({ ...prev, tasks: [] }));
   const addCharacter = (character: Omit<Character, "id">) => setState(prev => ({ ...prev, characters: [...prev.characters, { ...character, id: uid() }] }));
@@ -337,7 +385,23 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const normalized = imported.map(project => {
       const id = uid();
       idMap.set(project.id, id);
-      return { ...project, id, name: state.projects.some(p => p.name === project.name) ? `${project.name} (Imported)` : project.name, shots: project.shots.map(s => ({ ...s, id: uid(), duration: Math.min(30, Math.max(1, s.duration)) })), updatedAt: now() };
+      return {
+        ...project,
+        id,
+        name: state.projects.some(p => p.name === project.name) ? `${project.name} (Imported)` : project.name,
+        imageSettings: {
+          ...defaultImage(),
+          ...project.imageSettings,
+          model: IMAGE_MODELS.includes(project.imageSettings.model as typeof IMAGE_MODELS[number]) ? project.imageSettings.model : "seedream-4.5",
+        },
+        videoSettings: {
+          ...defaultVideo(),
+          ...project.videoSettings,
+          model: VIDEO_MODELS.includes(project.videoSettings.model as typeof VIDEO_MODELS[number]) ? project.videoSettings.model : "seedance-2.5",
+        },
+        shots: project.shots.map(s => ({ ...s, id: uid(), duration: Math.min(30, Math.max(1, s.duration)) })),
+        updatedAt: now(),
+      };
     });
     const importedTasks = workspacePayload ? (data.tasks as GenerationTask[]).map(task => ({ ...task, id: uid(), projectId: task.projectId ? idMap.get(task.projectId) : undefined })) : [];
     const importedPresets = workspacePayload ? (data.presets as Preset[]).map(preset => ({ ...preset, id: uid() })) : [];
@@ -349,7 +413,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <WorkspaceContext.Provider value={{ ...state, activeProject, lastSavedAt, createProject, openProject, renameProject, duplicateProject, deleteProject, updateProject, updateGeneratorSettings, addShot, updateShot, duplicateShot, removeShot, moveShot, addPreset, deletePreset, duplicatePreset, renamePreset, addTask, removeTask, clearTasks, addCharacter, exportProject, exportWorkspace, importWorkspace }}>
+    <WorkspaceContext.Provider value={{ ...state, activeProject, lastSavedAt, createProject, openProject, renameProject, duplicateProject, deleteProject, updateProject, updateGeneratorSettings, addShot, updateShot, duplicateShot, removeShot, moveShot, addPreset, deletePreset, duplicatePreset, renamePreset, addTask, updateTask, removeTask, clearTasks, addCharacter, exportProject, exportWorkspace, importWorkspace }}>
       {children}
     </WorkspaceContext.Provider>
   );

@@ -20,9 +20,11 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CreateMediaGenerationRequest,
   CreateShareRequest,
   CreateShareResponse,
   HealthStatus,
+  MediaGeneration,
   SharedContent
 } from './api.schemas';
 
@@ -124,6 +126,13 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getCreateShareLinkUrl = () => {
 
 
@@ -266,4 +275,306 @@ export function useGetSharedContent<TData = Awaited<ReturnType<typeof getSharedC
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
+export const getCreateMediaGenerationUrl = () => {
+
+
+
+
+  return `/api/media/generations`
+}
+
+/**
+ * @summary Start an AI media generation
+ */
+export const createMediaGeneration = async (createMediaGenerationRequest: CreateMediaGenerationRequest, options?: Parameters<typeof customFetch>[1]): Promise<MediaGeneration> => {
+
+  return customFetch<MediaGeneration>(getCreateMediaGenerationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createMediaGenerationRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateMediaGenerationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMediaGeneration>>, TError,{data: BodyType<CreateMediaGenerationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMediaGeneration>>, TError,{data: BodyType<CreateMediaGenerationRequest>}, TContext> => {
+
+const mutationKey = ['createMediaGeneration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMediaGeneration>>, {data: BodyType<CreateMediaGenerationRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createMediaGeneration(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMediaGenerationMutationResult = NonNullable<Awaited<ReturnType<typeof createMediaGeneration>>>
+    export type CreateMediaGenerationMutationBody = BodyType<CreateMediaGenerationRequest>
+    export type CreateMediaGenerationMutationError = ErrorType<void>
+
+    /**
+ * @summary Start an AI media generation
+ */
+export const useCreateMediaGeneration = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMediaGeneration>>, TError,{data: BodyType<CreateMediaGenerationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createMediaGeneration>>,
+        TError,
+        {data: BodyType<CreateMediaGenerationRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateMediaGenerationMutationOptions(options));
+    }
+
+export const getGetMediaGenerationUrl = (id: string,) => {
+
+
+
+
+  return `/api/media/generations/${id}`
+}
+
+/**
+ * @summary Get generation status and result
+ */
+export const getMediaGeneration = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<MediaGeneration> => {
+
+  return customFetch<MediaGeneration>(getGetMediaGenerationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMediaGenerationQueryKey = (id: string,) => {
+    return [
+    `/api/media/generations/${id}`
+    ] as const;
+    }
+
+
+export const getGetMediaGenerationQueryOptions = <TData = Awaited<ReturnType<typeof getMediaGeneration>>, TError = ErrorType<void>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMediaGeneration>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMediaGenerationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMediaGeneration>>> = ({ signal }) => getMediaGeneration(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMediaGeneration>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMediaGenerationQueryResult = NonNullable<Awaited<ReturnType<typeof getMediaGeneration>>>
+export type GetMediaGenerationQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get generation status and result
+ */
+
+export function useGetMediaGeneration<TData = Awaited<ReturnType<typeof getMediaGeneration>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMediaGeneration>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMediaGenerationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStreamMediaGenerationUrl = (id: string,) => {
+
+
+
+
+  return `/api/media/generations/${id}/events`
+}
+
+/**
+ * @summary Stream live generation progress
+ */
+export const streamMediaGeneration = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<string> => {
+
+  return customFetch<string>(getStreamMediaGenerationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getStreamMediaGenerationQueryKey = (id: string,) => {
+    return [
+    `/api/media/generations/${id}/events`
+    ] as const;
+    }
+
+
+export const getStreamMediaGenerationQueryOptions = <TData = Awaited<ReturnType<typeof streamMediaGeneration>>, TError = ErrorType<void>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamMediaGeneration>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getStreamMediaGenerationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof streamMediaGeneration>>> = ({ signal }) => streamMediaGeneration(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof streamMediaGeneration>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type StreamMediaGenerationQueryResult = NonNullable<Awaited<ReturnType<typeof streamMediaGeneration>>>
+export type StreamMediaGenerationQueryError = ErrorType<void>
+
+
+/**
+ * @summary Stream live generation progress
+ */
+
+export function useStreamMediaGeneration<TData = Awaited<ReturnType<typeof streamMediaGeneration>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamMediaGeneration>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getStreamMediaGenerationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCancelMediaGenerationUrl = (id: string,) => {
+
+
+
+
+  return `/api/media/generations/${id}/cancel`
+}
+
+/**
+ * @summary Cancel a queued or running generation
+ */
+export const cancelMediaGeneration = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<MediaGeneration> => {
+
+  return customFetch<MediaGeneration>(getCancelMediaGenerationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCancelMediaGenerationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelMediaGeneration>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelMediaGeneration>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['cancelMediaGeneration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelMediaGeneration>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelMediaGeneration(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelMediaGenerationMutationResult = NonNullable<Awaited<ReturnType<typeof cancelMediaGeneration>>>
+
+    export type CancelMediaGenerationMutationError = ErrorType<void>
+
+    /**
+ * @summary Cancel a queued or running generation
+ */
+export const useCancelMediaGeneration = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelMediaGeneration>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelMediaGeneration>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getCancelMediaGenerationMutationOptions(options));
+    }
 

@@ -2,12 +2,13 @@ import { useWorkspace, TaskType } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from "date-fns";
-import { ImageIcon, Video, AlertCircle, ClipboardList, Play, Trash2, Pencil, Loader2 } from "lucide-react";
+import { ImageIcon, Video, AlertCircle, ClipboardList, Play, Trash2, Pencil, Loader2, StopCircle, RefreshCw, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 
 export default function Pipeline() {
   const { tasks, projects, removeTask, clearTasks, openProject } = useWorkspace();
+  const hasActiveTasks = tasks.some(task => task.status === "queued" || task.status === "processing");
 
   const getIcon = (type: TaskType) => {
     switch (type) {
@@ -19,111 +20,169 @@ export default function Pipeline() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed': return 'success';
+      case 'completed': return 'default';
       case 'processing': return 'default';
       case 'failed': return 'destructive';
-      case 'requires_api': return 'warning';
+      case 'requires_api': return 'secondary';
+      case 'queued': return 'secondary';
       default: return 'secondary';
     }
   };
 
   return (
     <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
-      <div className="p-4 md:p-6 border-b border-border bg-card/30 flex flex-col md:flex-row items-start md:items-center justify-between shrink-0 gap-2 md:gap-0">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">Render Pipeline</h1>
-          <p className="text-sm text-muted-foreground mt-1">Review saved generation plans before connecting media APIs</p>
+      <div className="px-6 py-5 border-b border-border/50 bg-card/40 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between shrink-0 gap-4 md:gap-0">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-secondary rounded-xl border border-white/5">
+            <Zap className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Render Pipeline</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Manage and monitor AI generation tasks across all projects</p>
+          </div>
         </div>
         <div className="flex gap-4 items-center w-full md:w-auto justify-between md:justify-end">
           <div className="flex flex-col items-start md:items-end">
-              <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Planning status</span>
-              <span className="text-sm font-mono text-yellow-500 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-yellow-500" />
-                Offline · {tasks.length} saved
+            <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Engine Status</span>
+            <span className="text-sm font-mono font-bold text-primary flex items-center gap-2 mt-0.5">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+              </span>
+              fal.ai Gateway
             </span>
           </div>
-            {tasks.length > 0 && <Button variant="outline" size="sm" onClick={() => {
-              if (window.confirm("Delete every saved offline plan? Your projects will remain.")) clearTasks();
-            }}>Clear plans</Button>}
+          {tasks.length > 0 && (
+            <Button variant="outline" size="sm" disabled={hasActiveTasks} title={hasActiveTasks ? "Cancel active renders before clearing history." : undefined} className="border-border/50 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors" onClick={() => {
+              if (window.confirm("Clear pipeline history? Active projects will remain.")) clearTasks();
+            }} data-testid="button-clear-pipeline">
+              Clear History
+            </Button>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-6">
-        <div className="max-w-5xl mx-auto space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-background to-black/40">
+        <div className="max-w-6xl mx-auto space-y-4">
           {tasks.length === 0 ? (
-            <div className="text-center py-20 bg-card/20 rounded-md border border-dashed border-border/50">
-              <ClipboardList className="w-8 h-8 text-muted-foreground/30 mx-auto mb-4" />
-              <p className="text-muted-foreground font-mono text-sm uppercase tracking-wider">No offline plans yet</p>
-              <p className="mt-2 text-sm text-muted-foreground">Save a generator prompt or multi-shot batch to review it here.</p>
+            <div className="text-center py-24 bg-card/20 rounded-2xl border border-dashed border-border/50 flex flex-col items-center justify-center">
+              <div className="w-16 h-16 rounded-full bg-secondary/50 flex items-center justify-center mb-6">
+                <ClipboardList className="w-8 h-8 text-muted-foreground opacity-50" />
+              </div>
+              <h3 className="text-lg font-semibold tracking-tight text-foreground mb-2">Pipeline is Empty</h3>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Generate images or video sequences to see them tracked and rendered here.
+              </p>
             </div>
           ) : (
-            tasks.map(task => (
-              <Card key={task.id} className="bg-card/50 border-border/50 overflow-hidden group">
-                <div className="flex flex-col md:flex-row h-full">
-                  {/* Task thumbnail area */}
-                  <div className="w-full md:w-48 aspect-video md:aspect-auto md:h-32 bg-black/50 border-r border-border/50 flex items-center justify-center relative">
-                    {task.status === 'completed' ? (
-                      <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 to-transparent">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          {task.type === 'video' ? <Play className="w-8 h-8 text-white/50" /> : <ImageIcon className="w-8 h-8 text-white/50" />}
+            tasks.map(task => {
+              const model = task.metadata?.model || (task.type === 'video' ? 'Seedance 2.5' : 'Seedream 4.5');
+              
+              return (
+                <Card key={task.id} className="bg-card/40 border-white/5 overflow-hidden group hover:border-white/10 transition-colors shadow-lg" data-testid={`task-card-${task.id}`}>
+                  <div className="flex flex-col md:flex-row h-full">
+                    {/* Task thumbnail area */}
+                    <div className="w-full md:w-64 aspect-video md:aspect-auto md:h-40 bg-black/60 border-b md:border-b-0 md:border-r border-white/5 flex items-center justify-center relative overflow-hidden">
+                      {task.status === 'completed' ? (
+                        <div className="absolute inset-0 group-hover:scale-105 transition-transform duration-700">
+                          {task.resultUrl ? (
+                            task.type === 'video' ? (
+                              <video src={task.resultUrl} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+                            ) : (
+                              <img src={task.resultUrl} alt="Result" className="w-full h-full object-cover" />
+                            )
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-primary/10 to-transparent">
+                              {task.type === 'video' ? <Play className="w-8 h-8 text-white/30" /> : <ImageIcon className="w-8 h-8 text-white/30" />}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ) : task.status === 'processing' ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <Loader2 className="w-6 h-6 text-primary animate-spin" />
-                        <span className="text-[10px] font-mono text-primary">{Math.round(task.progress)}%</span>
-                      </div>
-                    ) : task.status === 'requires_api' ? (
-                      <AlertCircle className="w-8 h-8 text-yellow-500/50" />
-                    ) : (
-                      <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
-                    )}
-                  </div>
-                  
-                  {/* Task Details */}
-                  <div className="p-4 flex-1 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          {getIcon(task.type)}
-                          <span className="font-mono text-xs uppercase text-muted-foreground tracking-wider">
-                            {task.type} • {task.id}
-                          </span>
+                      ) : task.status === 'processing' ? (
+                        <div className="absolute inset-0 bg-primary/5 flex flex-col items-center justify-center gap-3">
+                          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                          <span className="text-sm font-mono font-bold text-primary text-glow">{Math.round(task.progress)}%</span>
                         </div>
-                        <Badge variant={getStatusColor(task.status) as any} className="text-[10px] font-mono uppercase">
-                          {task.status.replace('_', ' ')}
-                        </Badge>
+                      ) : task.status === 'failed' ? (
+                        <div className="absolute inset-0 bg-destructive/10 flex items-center justify-center">
+                          <StopCircle className="w-8 h-8 text-destructive/50" />
+                        </div>
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                          <Loader2 className="w-6 h-6 text-muted-foreground/30 animate-spin" />
+                        </div>
+                      )}
+                      
+                      <div className="absolute top-2 left-2 flex gap-1">
+                         <Badge variant="outline" className="bg-black/60 backdrop-blur-sm text-[9px] font-mono border-white/10 uppercase">{task.type}</Badge>
+                         {task.metadata?.ratio && (
+                           <Badge variant="outline" className="bg-black/60 backdrop-blur-sm text-[9px] font-mono border-white/10">{task.metadata.ratio}</Badge>
+                         )}
                       </div>
-                      <p className="text-sm line-clamp-2 mt-2 leading-relaxed text-foreground/90">
-                        {task.prompt}
-                      </p>
                     </div>
                     
-                    <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground font-mono">
-                       <span>{formatDistanceToNow(task.createdAt, { addSuffix: true })}</span>
-                       <div className="flex items-center gap-1">
-                         {task.projectId && projects.some(p => p.id === task.projectId) && (
-                           <Link href={task.type === "multi-shot" ? "/multi-shot" : task.type === "video" ? "/video-generator" : "/image-generator"}>
-                             <Button size="sm" variant="ghost" className="gap-2" onClick={() => openProject(task.projectId!)}><Pencil className="h-4 w-4" /> Edit</Button>
-                           </Link>
-                         )}
-                         <Button size="icon" variant="ghost" aria-label="Remove saved plan" onClick={() => {
-                           if (window.confirm("Delete this saved offline plan? This cannot be undone.")) removeTask(task.id);
-                         }}><Trash2 className="h-4 w-4" /></Button>
-                       </div>
+                    {/* Task Details */}
+                    <div className="p-5 flex-1 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] text-muted-foreground tracking-widest uppercase">
+                              ID: {task.id.slice(0, 8)}
+                            </span>
+                            <span className="w-1 h-1 rounded-full bg-white/20" />
+                            <span className="font-mono text-[10px] text-primary tracking-widest uppercase font-bold">
+                              {model}
+                            </span>
+                          </div>
+                          <Badge variant={getStatusColor(task.status) as any} className={`text-[10px] font-mono uppercase ${
+                            task.status === 'processing' ? 'bg-primary/20 text-primary border-primary/30' :
+                            task.status === 'completed' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+                            task.status === 'failed' ? 'bg-destructive/10 text-destructive border-destructive/20' :
+                            'bg-secondary text-muted-foreground'
+                          }`}>
+                            {task.status.replace('_', ' ')}
+                          </Badge>
+                        </div>
+                        <p className="text-sm font-medium line-clamp-2 mt-1 leading-relaxed text-foreground/90">
+                          {task.prompt}
+                        </p>
+                        {task.error && task.status === 'failed' && (
+                          <p className="text-xs text-destructive mt-2 bg-destructive/10 p-2 rounded-md font-mono border border-destructive/20 inline-block">
+                            {task.error}
+                          </p>
+                        )}
+                      </div>
+                      
+                      <div className="mt-5 flex items-center justify-between text-xs text-muted-foreground font-mono">
+                         <span className="opacity-70">{formatDistanceToNow(task.createdAt, { addSuffix: true })}</span>
+                         <div className="flex items-center gap-1.5">
+                           {task.projectId && projects.some(p => p.id === task.projectId) && (
+                             <Link href={task.type === "multi-shot" ? "/multi-shot" : task.type === "video" ? "/video-generator" : "/image-generator"}>
+                               <Button size="sm" variant="secondary" className="gap-2 h-8 bg-black/40 hover:bg-black/60 border border-white/5" onClick={() => openProject(task.projectId!)} data-testid={`button-edit-task-${task.id}`}>
+                                 <Pencil className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Remix</span>
+                               </Button>
+                             </Link>
+                           )}
+                            <Button size="icon" variant="ghost" disabled={task.status === "queued" || task.status === "processing"} title={task.status === "queued" || task.status === "processing" ? "Cancel this render before removing it." : undefined} className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" aria-label="Remove saved plan" onClick={() => {
+                             if (window.confirm("Delete this rendering task?")) removeTask(task.id);
+                           }} data-testid={`button-delete-task-${task.id}`}>
+                             <Trash2 className="h-3.5 w-3.5" />
+                           </Button>
+                         </div>
+                      </div>
+                      
                       {task.status === 'processing' && (
-                        <div className="w-32 h-1 bg-secondary rounded-full overflow-hidden">
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-secondary overflow-hidden">
                           <div 
-                            className="h-full bg-primary transition-all duration-300"
+                            className="h-full bg-primary transition-all duration-500 ease-linear shadow-[0_0_10px_rgba(212,255,0,0.8)]"
                             style={{ width: `${task.progress}%` }}
                           />
                         </div>
                       )}
                     </div>
                   </div>
-                </div>
-              </Card>
-            ))
+                </Card>
+              );
+            })
           )}
         </div>
       </div>

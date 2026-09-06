@@ -1,13 +1,15 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
-import { AlertCircle, Menu } from "lucide-react";
+import { Menu, Zap } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "../ui/sheet";
 import { Button } from "../ui/button";
 import { useLocation } from "wouter";
+import { getSharedSupabaseAccessToken } from "@/lib/shared-auth";
 
 export function Shell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [location] = useLocation();
+  const signedIn = Boolean(getSharedSupabaseAccessToken());
 
   useEffect(() => {
     setOpen(false);
@@ -30,7 +32,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="w-10 h-10" aria-label="Open navigation menu">
+              <Button variant="ghost" size="icon" className="w-10 h-10" aria-label="Open navigation menu" data-testid="button-mobile-menu">
                 <Menu className="w-5 h-5" />
               </Button>
             </SheetTrigger>
@@ -40,10 +42,16 @@ export function Shell({ children }: { children: ReactNode }) {
           </Sheet>
         </div>
 
-        <div className="bg-destructive/10 border-b border-destructive/20 px-2 py-1.5 md:px-4 md:py-2 flex items-center justify-center gap-1.5 md:gap-2 text-destructive-foreground text-[9px] md:text-xs font-mono uppercase tracking-wider shrink-0 z-10 text-center leading-tight">
-          <AlertCircle className="w-3 h-3 shrink-0" />
-          <span className="hidden sm:inline">Server-side BytePlus API connection required for media generation. Operating in offline planning mode.</span>
-          <span className="sm:hidden">API connection required. Offline mode.</span>
+        <div className="bg-primary/10 border-b border-primary/20 px-2 py-1.5 md:px-4 md:py-2 flex items-center justify-center gap-2 text-primary-foreground text-[10px] md:text-xs font-mono uppercase tracking-widest shrink-0 z-10 text-center leading-tight">
+          <span className="relative flex h-2 w-2">
+            {signedIn && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>}
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+          </span>
+          {signedIn ? (
+            <span className="text-primary font-bold">Secure fal.ai generation gateway</span>
+          ) : (
+            <a href="/auth" className="text-primary font-bold underline underline-offset-2">Sign in through Aura to enable generation</a>
+          )}
         </div>
         
         <div className="flex-1 overflow-hidden relative flex flex-col">

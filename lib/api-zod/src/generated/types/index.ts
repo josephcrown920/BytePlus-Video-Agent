@@ -6,11 +6,19 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './createMediaGenerationRequest';
+export * from './createMediaGenerationRequestAspectRatio';
+export * from './createMediaGenerationRequestDuration';
+export * from './createMediaGenerationRequestResolution';
 export * from './createShareRequest';
 export * from './createShareRequestData';
 export * from './createShareRequestType';
 export * from './createShareResponse';
 export * from './healthStatus';
+export * from './mediaGeneration';
+export * from './mediaGenerationStatus';
+export * from './mediaKind';
+export * from './mediaModel';
 export * from './sharedContent';
 export * from './sharedContentData';
 export * from './sharedContentType';

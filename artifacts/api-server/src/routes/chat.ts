@@ -40,7 +40,7 @@ function resolveModel(modelId: ModelId, openaiBaseUrl: string, openaiApiKey: str
         baseURL: "https://api.x.ai/v1",
         headers: { Authorization: `Bearer ${apiKey}` },
       });
-      return xai("grok-3-mini");
+      return xai("grok-3-mini") as unknown as LanguageModel;
     }
     default: {
       const gateway = createOpenAICompatible({
@@ -48,7 +48,7 @@ function resolveModel(modelId: ModelId, openaiBaseUrl: string, openaiApiKey: str
         baseURL: openaiBaseUrl,
         headers: { Authorization: `Bearer ${openaiApiKey}` },
       });
-      return gateway("gpt-5.6-terra");
+      return gateway("gpt-5.6-terra") as unknown as LanguageModel;
     }
   }
 }

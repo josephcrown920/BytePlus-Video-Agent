@@ -15,6 +15,7 @@
     "@ai-sdk/google": "^4.0.36",
     "@ai-sdk/openai-compatible": "^0.2.14",
     "@supabase/supabase-js": "^2.111.0",
+    "@replit/connectors-sdk": "^0.4.1",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "ai": "^7.0.0",
