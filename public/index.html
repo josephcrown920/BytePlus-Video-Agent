@@ -26,10 +26,12 @@
     <nav class="nav">
       <button class="nav-btn active" data-tab="generate">🎬 Generate</button>
       <button class="nav-btn" data-tab="multishot">🎞️ Multi-Shot</button>
+      <button class="nav-btn" data-tab="storyboard">📐 Storyboard</button>
+      <button class="nav-btn" data-tab="moodboard">🎨 Moodboard</button>
+      <button class="nav-btn" data-tab="layers">🎭 Layers</button>
       <button class="nav-btn" data-tab="drafts">📝 Drafts</button>
       <button class="nav-btn" data-tab="bible">📖 Bible</button>
       <button class="nav-btn" data-tab="tasks">⚡ Tasks</button>
-      <button class="nav-btn" data-tab="pipeline">🔧 Pipeline</button>
     </nav>
 
     <main class="main-content">
@@ -193,6 +195,7 @@
                 <option value="16:9">16:9</option>
                 <option value="21:9">21:9</option>
                 <option value="9:16">9:16</option>
+                <option value="adaptive">adaptive (from first frame)</option>
               </select>
             </div>
             <div class="form-group">
@@ -205,6 +208,7 @@
             <div class="form-group">
               <label>Model</label>
               <select id="ms-model">
+                <option value="2.5">Seedance 2.5 (Best)</option>
                 <option value="2.0">Seedance 2.0</option>
                 <option value="1.5-pro">1.5 Pro</option>
               </select>
@@ -218,6 +222,9 @@
                 <button class="btn btn-small btn-danger btn-rm-shot" data-idx="0">Remove</button>
               </div>
               <textarea class="shot-prompt" rows="2" placeholder="Describe this shot... e.g., Wide establishing shot of city skyline at night"></textarea>
+              <div class="shot-image-ref">
+                <input type="text" class="shot-first-frame" placeholder="First frame image URL (optional)">
+              </div>
             </div>
           </div>
 
@@ -231,6 +238,250 @@
           <div id="ms-result" class="result-area hidden">
             <h3>Multi-Shot Results</h3>
             <div id="ms-output"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- STORYBOARD TAB -->
+      <section id="tab-storyboard" class="tab-content">
+        <div class="panel">
+          <h2>📐 Storyboard</h2>
+          <p class="panel-desc">Visual storyboard grid — generate and arrange your shot sequence</p>
+
+          <div class="storyboard-toolbar">
+            <input type="text" id="sb-project" placeholder="Project name" style="flex: 1;">
+            <select id="sb-aspect">
+              <option value="16:9">16:9</option>
+              <option value="9:16">9:16</option>
+              <option value="21:9">21:9</option>
+              <option value="1:1">1:1</option>
+            </select>
+            <button id="btn-sb-add" class="btn btn-secondary btn-small">+ Add Frame</button>
+            <button id="btn-sb-gen-all" class="btn btn-primary btn-small">🎨 Generate All</button>
+          </div>
+
+          <div id="storyboard-grid" class="storyboard-grid">
+            <div class="sb-frame" data-frame="0">
+              <div class="sb-frame-num">1</div>
+              <div class="sb-frame-canvas">
+                <p class="muted">Click to add prompt</p>
+              </div>
+              <textarea class="sb-prompt" rows="2" placeholder="Shot description..."></textarea>
+              <div class="sb-frame-actions">
+                <button class="btn btn-small btn-secondary btn-sb-gen">Generate</button>
+                <button class="btn btn-small btn-danger btn-sb-del">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MOODBOARD TAB -->
+      <section id="tab-moodboard" class="tab-content">
+        <div class="panel">
+          <h2>🎨 Moodboard</h2>
+          <p class="panel-desc">Collect visual references, color palettes, and style inspirations</p>
+
+          <div class="moodboard-toolbar">
+            <input type="text" id="mb-search" placeholder="Generate a mood image...">
+            <button id="btn-mb-add" class="btn btn-primary btn-small">+ Add Image</button>
+          </div>
+
+          <div class="moodboard-section">
+            <h3>🖼️ Visual References</h3>
+            <div id="moodboard-images" class="moodboard-grid">
+              <div class="mood-item mood-placeholder">
+                <p class="muted">Generate mood images to build your visual style reference</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="moodboard-section">
+            <h3>🎨 Color Palette</h3>
+            <div class="color-palette">
+              <div class="color-swatch" style="background: #0a0a15;" data-color="#0a0a15">
+                <span class="color-label">#0a0a15</span>
+              </div>
+              <div class="color-swatch" style="background: #1e3a5f;" data-color="#1e3a5f">
+                <span class="color-label">#1e3a5f</span>
+              </div>
+              <div class="color-swatch" style="background: #dc2626;" data-color="#dc2626">
+                <span class="color-label">#dc2626</span>
+              </div>
+              <div class="color-swatch" style="background: #0ea5e9;" data-color="#0ea5e9">
+                <span class="color-label">#0ea5e9</span>
+              </div>
+              <div class="color-swatch" style="background: #7c2d12;" data-color="#7c2d12">
+                <span class="color-label">#7c2d12</span>
+              </div>
+              <div class="color-swatch" style="background: #64748b;" data-color="#64748b">
+                <span class="color-label">#64748b</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="moodboard-section">
+            <h3>💭 Style Notes</h3>
+            <textarea id="mb-notes" rows="4" style="width: 100%;" placeholder="Style direction, inspiration, references..."></textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- LAYERS TAB -->
+      <section id="tab-layers" class="tab-content">
+        <div class="panel">
+          <h2>🎭 Layer Composer</h2>
+          <p class="panel-desc">Build multi-layer composite shots (e.g., foreground character + looping background)</p>
+
+          <div class="layers-toolbar">
+            <h3 style="margin-bottom: 15px;">Frame Composition</h3>
+            <div class="composition-preview-wrapper">
+              <div class="composition-preview" id="composition-preview">
+                <div class="frame-layer layer-b" id="layer-b-preview">
+                  <span>Layer B (Background)</span>
+                </div>
+                <div class="frame-layer layer-a" id="layer-a-preview">
+                  <span>Layer A (Foreground)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top: 20px;">
+            <!-- Layer A -->
+            <div class="layer-panel">
+              <h3 style="color: var(--accent-primary);">Layer A — Foreground</h3>
+              <p class="panel-desc">Main subject (e.g., artist performing)</p>
+
+              <div class="form-group">
+                <label>Prompt</label>
+                <textarea id="layer-a-prompt" rows="3" placeholder="e.g., Rapper performing in bottom-right of frame..."></textarea>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Position</label>
+                  <select id="layer-a-position">
+                    <option value="bottom-right">Bottom Right</option>
+                    <option value="bottom-left">Bottom Left</option>
+                    <option value="top-right">Top Right</option>
+                    <option value="top-left">Top Left</option>
+                    <option value="center">Center</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Shot Size</label>
+                  <select id="layer-a-shot">
+                    <option value="waist-up">Waist Up</option>
+                    <option value="medium">Medium</option>
+                    <option value="full-body">Full Body</option>
+                    <option value="close-up">Close Up</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>First Frame URL (optional)</label>
+                <input type="text" id="layer-a-first-frame" placeholder="Image URL for likeness lock">
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Duration</label>
+                  <input type="number" id="layer-a-duration" value="12" min="2" max="15">
+                </div>
+                <div class="form-group">
+                  <label>Model</label>
+                  <select id="layer-a-model">
+                    <option value="2.5">Seedance 2.5</option>
+                    <option value="2.0">Seedance 2.0</option>
+                  </select>
+                </div>
+              </div>
+
+              <button id="btn-layer-a-gen" class="btn btn-primary" style="width: 100%;">🎬 Generate Layer A</button>
+            </div>
+
+            <!-- Layer B -->
+            <div class="layer-panel">
+              <h3 style="color: var(--accent-secondary);">Layer B — Background</h3>
+              <p class="panel-desc">Background action (e.g., police running — looped)</p>
+
+              <div class="form-group">
+                <label>Prompt</label>
+                <textarea id="layer-b-prompt" rows="3" placeholder="e.g., Police officers running in top-left of frame..."></textarea>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Position</label>
+                  <select id="layer-b-position">
+                    <option value="top-left">Top Left</option>
+                    <option value="top-right">Top Right</option>
+                    <option value="bottom-left">Bottom Left</option>
+                    <option value="bottom-right">Bottom Right</option>
+                    <option value="full">Full Frame</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Shot Size</label>
+                  <select id="layer-b-shot">
+                    <option value="full-body">Full Body</option>
+                    <option value="medium">Medium</option>
+                    <option value="wide">Wide</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Duration (loop source)</label>
+                  <input type="number" id="layer-b-duration" value="4" min="2" max="15">
+                </div>
+                <div class="form-group">
+                  <label>Loop count</label>
+                  <input type="number" id="layer-b-loops" value="3" min="1" max="10">
+                </div>
+              </div>
+
+              <div class="checkbox-row">
+                <label><input type="checkbox" id="layer-b-loop" checked> Loop this layer</label>
+                <label><input type="checkbox" id="layer-b-blur"> Add blur (depth)</label>
+              </div>
+
+              <button id="btn-layer-b-gen" class="btn btn-secondary" style="width: 100%;">🎬 Generate Layer B</button>
+            </div>
+          </div>
+
+          <div class="panel" style="margin-top: 20px; background: var(--bg-tertiary);">
+            <h3>📋 Export & Post-Production</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Final Duration</label>
+                <input type="text" id="final-duration" value="15 seconds" readonly>
+              </div>
+              <div class="form-group">
+                <label>Total Layers</label>
+                <input type="text" value="2 + Composite" readonly>
+              </div>
+            </div>
+            <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+              <strong>Post-production steps:</strong><br>
+              1. Import Layer B as base track → loop to 15s<br>
+              2. Import Layer A as overlay → position in corner<br>
+              3. Add blur to Layer B for depth<br>
+              4. Color grade both layers to match<br>
+              5. Add vignette → export 1080p
+            </div>
+            <div class="button-row">
+              <button id="btn-export-composite" class="btn btn-primary">📋 Copy Compositing Guide</button>
+              <button id="btn-save-layers-draft" class="btn btn-secondary">💾 Save as Draft</button>
+            </div>
+          </div>
+
+          <div id="layers-result" class="result-area hidden">
+            <h3>Generation Results</h3>
+            <div id="layers-output"></div>
           </div>
         </div>
       </section>
