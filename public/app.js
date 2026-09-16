@@ -340,11 +340,19 @@ function initMultiShot() {
 }
 
 function getShotsData() {
-  const prompts = document.querySelectorAll('.shot-prompt');
+  const shotItems = document.querySelectorAll('.shot-item');
   const shots = [];
-  prompts.forEach((ta, idx) => {
-    if (ta.value.trim()) {
-      shots.push({ id: `shot-${idx + 1}`, prompt: ta.value.trim() });
+  shotItems.forEach((item, idx) => {
+    const prompt = item.querySelector('.shot-prompt')?.value;
+    const motion = item.querySelector('.shot-motion')?.value;
+    const firstFrame = item.querySelector('.shot-first-frame')?.value;
+    if (prompt && prompt.trim()) {
+      shots.push({
+        id: `shot-${idx + 1}`,
+        prompt: prompt.trim(),
+        motion: motion || undefined,
+        firstFrame: firstFrame || undefined,
+      });
     }
   });
   return shots;
@@ -773,6 +781,7 @@ function initLayers() {
         duration: Number(document.getElementById('layer-a-duration').value),
         resolution: '1080p',
         firstFrame: firstFrame || undefined,
+        motion: document.getElementById('layer-a-motion').value || undefined,
         confirmed: true,
         noWait: true,
       }),
@@ -800,6 +809,7 @@ function initLayers() {
         ratio: '16:9',
         duration: Number(document.getElementById('layer-b-duration').value),
         resolution: '1080p',
+        motion: document.getElementById('layer-b-motion').value || undefined,
         confirmed: true,
         noWait: true,
       }),

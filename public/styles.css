@@ -344,6 +344,32 @@ body {
   margin-top: 8px;
 }
 
+.shot-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.shot-meta select,
+.shot-meta input {
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.shot-meta select {
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+
+.shot-meta input {
+  flex: 1;
+}
+
 .shot-first-frame {
   width: 100%;
   padding: 6px 10px;

@@ -139,9 +139,15 @@ export async function videoRoutes(ctx) {
     const results = [];
     for (let i = 0; i < body.shots.length; i++) {
       const shot = body.shots[i];
+      let shotPrompt = shot.prompt;
+      if (shot.motion && MOTION_PRESETS[shot.motion]) {
+        shotPrompt = `${shot.prompt}. ${MOTION_PRESETS[shot.motion].prompt}`;
+      } else if (body.motion && MOTION_PRESETS[body.motion]) {
+        shotPrompt = `${shot.prompt}. ${MOTION_PRESETS[body.motion].prompt}`;
+      }
       try {
         const result = await client.submit({
-          prompt: shot.prompt,
+          prompt: shotPrompt,
           version: body.version || shot.version,
           ratio: body.ratio || shot.ratio || "16:9",
           duration: body.duration || shot.duration || 5,
