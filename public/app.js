@@ -586,14 +586,346 @@ function initPipeline() {
   });
 }
 
+// ===== Storyboard =====
+let sbFrameCount = 1;
+
+function initStoryboard() {
+  document.getElementById('btn-sb-add').addEventListener('click', () => {
+    addStoryboardFrame();
+  });
+
+  // Initial frame handler
+  attachSbHandlers(0);
+
+  // Generate all
+  document.getElementById('btn-sb-gen-all').addEventListener('click', async () => {
+    const frames = document.querySelectorAll('.sb-frame');
+    showToast(`Generating ${frames.length} frames...`, 'info');
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i];
+      const prompt = frame.querySelector('.sb-prompt').value;
+      if (prompt.trim()) {
+        await generateSbFrame(frame, prompt);
+      }
+    }
+    showToast('All frames generated!', 'success');
+  });
+}
+
+function addStoryboardFrame() {
+  sbFrameCount++;
+  const grid = document.getElementById('storyboard-grid');
+  const frame = document.createElement('div');
+  frame.className = 'sb-frame';
+  frame.dataset.frame = sbFrameCount - 1;
+  frame.innerHTML = `
+    <div class="sb-frame-num">${sbFrameCount}</div>
+    <div class="sb-frame-canvas">
+      <p class="muted">Click to add prompt</p>
+    </div>
+    <textarea class="sb-prompt" rows="2" placeholder="Shot description..."></textarea>
+    <div class="sb-frame-actions">
+      <button class="btn btn-small btn-secondary btn-sb-gen">Generate</button>
+      <button class="btn btn-small btn-danger btn-sb-del">✕</button>
+    </div>
+  `;
+  grid.appendChild(frame);
+  attachSbHandlers(sbFrameCount - 1);
+}
+
+function attachSbHandlers(idx) {
+  const frame = document.querySelector(`.sb-frame[data-frame="${idx}"]`);
+  if (!frame) return;
+
+  const genBtn = frame.querySelector('.btn-sb-gen');
+  const delBtn = frame.querySelector('.btn-sb-del');
+  const canvas = frame.querySelector('.sb-frame-canvas');
+  const prompt = frame.querySelector('.sb-prompt');
+
+  if (genBtn) {
+    genBtn.addEventListener('click', async () => {
+      if (!prompt.value.trim()) return showToast('Enter a prompt first', 'warning');
+      await generateSbFrame(frame, prompt.value);
+    });
+  }
+
+  if (delBtn) {
+    delBtn.addEventListener('click', () => {
+      if (sbFrameCount > 1) {
+        frame.remove();
+        showToast('Frame removed', 'info');
+      }
+    });
+  }
+
+  if (canvas) {
+    canvas.addEventListener('click', () => prompt.focus());
+  }
+}
+
+async function generateSbFrame(frame, prompt) {
+  const canvas = frame.querySelector('.sb-frame-canvas');
+  canvas.innerHTML = '<p class="muted">⏳ Generating...</p>';
+
+  const result = await apiCall('/image/generate', {
+    method: 'POST',
+    body: JSON.stringify({
+      prompt,
+      version: '5.0',
+      size: '2K',
+      confirmed: true,
+    }),
+  });
+
+  if (result.ok && result.data && result.data.length > 0) {
+    const url = result.data[0].url;
+    canvas.innerHTML = `<img src="${url}" alt="Storyboard frame">`;
+  } else {
+    canvas.innerHTML = `<p style="color: var(--danger); font-size: 11px;">Failed: ${result.error || 'unknown'}</p>`;
+  }
+}
+
+// ===== Moodboard =====
+let moodImages = [];
+
+function initMoodboard() {
+  document.getElementById('btn-mb-add').addEventListener('click', async () => {
+    const search = document.getElementById('mb-search').value;
+    if (!search.trim()) return showToast('Enter a prompt', 'warning');
+
+    showToast('Generating mood image...', 'info');
+    const result = await apiCall('/image/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        prompt: search,
+        version: '5.0',
+        size: '2K',
+        confirmed: true,
+      }),
+    });
+
+    if (result.ok && result.data && result.data.length > 0) {
+      const url = result.data[0].url;
+      addMoodImage(url);
+      showToast('Mood image added!', 'success');
+    } else {
+      showToast('Generation failed', 'error');
+    }
+  });
+
+  // Color swatch click
+  document.querySelectorAll('.color-swatch').forEach(swatch => {
+    swatch.addEventListener('click', () => {
+      const color = swatch.dataset.color;
+      navigator.clipboard?.writeText(color);
+      showToast(`Copied ${color}`, 'info');
+    });
+  });
+}
+
+function addMoodImage(url) {
+  moodImages.push(url);
+  const grid = document.getElementById('moodboard-images');
+
+  // Remove placeholder if present
+  const placeholder = grid.querySelector('.mood-placeholder');
+  if (placeholder) placeholder.remove();
+
+  const item = document.createElement('div');
+  item.className = 'mood-item';
+  item.innerHTML = `<img src="${url}" alt="Mood reference">`;
+  grid.appendChild(item);
+}
+
+// ===== Layer Composer =====
+function initLayers() {
+  // Position changes update the preview
+  const updatePreview = () => {
+    const layerA = document.getElementById('layer-a-preview');
+    const layerB = document.getElementById('layer-b-preview');
+
+    // Layer A
+    const posA = document.getElementById('layer-a-position').value;
+    setLayerPosition(layerA, posA, 'a');
+
+    // Layer B
+    const posB = document.getElementById('layer-b-position').value;
+    setLayerPosition(layerB, posB, 'b');
+  };
+
+  document.getElementById('layer-a-position').addEventListener('change', updatePreview);
+  document.getElementById('layer-b-position').addEventListener('change', updatePreview);
+
+  // Generate Layer A
+  document.getElementById('btn-layer-a-gen').addEventListener('click', async () => {
+    const prompt = document.getElementById('layer-a-prompt').value;
+    if (!prompt) return showToast('Enter a prompt for Layer A', 'warning');
+
+    showToast('Generating Layer A...', 'info');
+    const firstFrame = document.getElementById('layer-a-first-frame').value;
+
+    const result = await apiCall('/video/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        prompt,
+        version: document.getElementById('layer-a-model').value,
+        ratio: '16:9',
+        duration: Number(document.getElementById('layer-a-duration').value),
+        resolution: '1080p',
+        firstFrame: firstFrame || undefined,
+        confirmed: true,
+        noWait: true,
+      }),
+    });
+
+    if (result.ok) {
+      showToast(`Layer A submitted! Task: ${result.task_id}`, 'success');
+      addLayerResult('A', result);
+    } else {
+      showToast('Layer A failed: ' + (result.error || 'unknown'), 'error');
+    }
+  });
+
+  // Generate Layer B
+  document.getElementById('btn-layer-b-gen').addEventListener('click', async () => {
+    const prompt = document.getElementById('layer-b-prompt').value;
+    if (!prompt) return showToast('Enter a prompt for Layer B', 'warning');
+
+    showToast('Generating Layer B...', 'info');
+    const result = await apiCall('/video/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        prompt,
+        version: '2.5',
+        ratio: '16:9',
+        duration: Number(document.getElementById('layer-b-duration').value),
+        resolution: '1080p',
+        confirmed: true,
+        noWait: true,
+      }),
+    });
+
+    if (result.ok) {
+      showToast(`Layer B submitted! Task: ${result.task_id}`, 'success');
+      addLayerResult('B', result);
+    } else {
+      showToast('Layer B failed: ' + (result.error || 'unknown'), 'error');
+    }
+  });
+
+  // Export compositing guide
+  document.getElementById('btn-export-composite').addEventListener('click', () => {
+    const guide = `=== LAYER COMPOSITING GUIDE ===
+
+Layer A (Foreground): ${document.getElementById('layer-a-prompt').value}
+  Position: ${document.getElementById('layer-a-position').value}
+  Shot: ${document.getElementById('layer-a-shot').value}
+  Duration: ${document.getElementById('layer-a-duration').value}s
+  Model: ${document.getElementById('layer-a-model').value}
+
+Layer B (Background): ${document.getElementById('layer-b-prompt').value}
+  Position: ${document.getElementById('layer-b-position').value}
+  Shot: ${document.getElementById('layer-b-shot').value}
+  Duration: ${document.getElementById('layer-b-duration').value}s (loop to final length)
+  Loop: ${document.getElementById('layer-b-loop').checked ? 'Yes' : 'No'}
+  Blur: ${document.getElementById('layer-b-blur').checked ? 'Yes' : 'No'}
+  Loop count: ${document.getElementById('layer-b-loops').value}
+
+POST-PRODUCTION STEPS:
+1. Import Layer B as base track → loop to ${document.getElementById('final-duration').value}
+2. Import Layer A as overlay → position in ${document.getElementById('layer-a-position').value}
+3. Add blur to Layer B for depth
+4. Color grade both layers to match
+5. Add vignette → export 1080p`;
+
+    navigator.clipboard?.writeText(guide);
+    showToast('Compositing guide copied to clipboard!', 'success');
+  });
+
+  // Save as draft
+  document.getElementById('btn-save-layers-draft').addEventListener('click', async () => {
+    const result = await apiCall('/drafts', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'layers',
+        data: {
+          layerA: {
+            prompt: document.getElementById('layer-a-prompt').value,
+            position: document.getElementById('layer-a-position').value,
+            shot: document.getElementById('layer-a-shot').value,
+            duration: document.getElementById('layer-a-duration').value,
+          },
+          layerB: {
+            prompt: document.getElementById('layer-b-prompt').value,
+            position: document.getElementById('layer-b-position').value,
+            shot: document.getElementById('layer-b-shot').value,
+            duration: document.getElementById('layer-b-duration').value,
+            loop: document.getElementById('layer-b-loop').checked,
+          },
+        },
+      }),
+    });
+    if (result.ok) showToast('Draft saved!', 'success');
+  });
+
+  // Initial preview
+  updatePreview();
+}
+
+function setLayerPosition(element, position, layer) {
+  const styles = {
+    'bottom-right': { bottom: '5%', right: '5%', top: 'auto', left: 'auto' },
+    'bottom-left': { bottom: '5%', left: '5%', top: 'auto', right: 'auto' },
+    'top-right': { top: '5%', right: '5%', bottom: 'auto', left: 'auto' },
+    'top-left': { top: '5%', left: '5%', bottom: 'auto', right: 'auto' },
+    'center': { top: '50%', left: '50%', bottom: 'auto', right: 'auto', transform: 'translate(-50%, -50%)' },
+    'full': { top: '0', left: '0', bottom: '0', right: 'auto', width: '100%', height: '100%' },
+  };
+
+  const style = styles[position] || styles['bottom-right'];
+  for (const [key, val] of Object.entries(style)) {
+    element.style[key] = val;
+  }
+
+  // Default sizes
+  if (position !== 'full' && position !== 'center') {
+    if (layer === 'a') {
+      element.style.width = '35%';
+      element.style.height = '55%';
+    } else {
+      element.style.width = '40%';
+      element.style.height = '40%';
+    }
+  }
+}
+
+function addLayerResult(layer, result) {
+  const output = document.getElementById('layers-output');
+  document.getElementById('layers-result').classList.remove('hidden');
+  const div = document.createElement('div');
+  div.style.cssText = 'padding: 10px; background: var(--bg-tertiary); border-radius: 6px; margin-bottom: 8px;';
+  div.innerHTML = `
+    <strong>Layer ${layer}</strong> — Task ID: ${result.task_id}
+    <br><span style="font-size: 12px; color: var(--text-muted);">Status: ${result.status}. Check Tasks tab for progress.</span>
+  `;
+  output.appendChild(div);
+}
+
 // ===== Initialize =====
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   initImageGen();
   initVideoGen();
   initMultiShot();
+  initStoryboard();
+  initMoodboard();
+  initLayers();
   initDrafts();
   initTasks();
+  initBible();
+  initPipeline();
+  checkApiStatus();
+  setInterval(checkApiStatus, 30000);
   initBible();
   initPipeline();
   checkApiStatus();
