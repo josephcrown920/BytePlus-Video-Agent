@@ -15,11 +15,76 @@ export const SEEDREAM_MODELS = {
 export const SEEDANCE_MODELS = {
   "1.0-lite": "seedance-1-0-lite-t2v-250428",
   "1.0-pro": "seedance-1-0-pro-250528",
+  "1.0-pro-fast": "seedance-1-0-pro-fast-251015",
   "1.5-pro": "seedance-1-5-pro-251215",
   "2.0": "dreamina-seedance-2-0-260128",
   "2.0-fast": "dreamina-seedance-2-0-fast-260128",
   "2.0-mini": "dreamina-seedance-2-0-mini-260615",
   "2.5": "dreamina-seedance-2-5-260628",
+};
+
+// Motion control presets
+export const MOTION_PRESETS = {
+  "static": {
+    name: "Static / Locked-off",
+    description: "No camera movement, locked-off shot",
+    prompt: "static locked-off camera, zero camera movement, perfectly still shot",
+  },
+  "slow-pan-left": {
+    name: "Slow Pan Left",
+    description: "Gentle slow pan to the left",
+    prompt: "slow smooth camera pan to the left, cinematic movement",
+  },
+  "slow-pan-right": {
+    name: "Slow Pan Right",
+    description: "Gentle slow pan to the right",
+    prompt: "slow smooth camera pan to the right, cinematic movement",
+  },
+  "slow-dolly-in": {
+    name: "Slow Dolly In",
+    description: "Slow push-in toward subject",
+    prompt: "slow dolly in toward subject, cinematic push-in, smooth steady movement",
+  },
+  "slow-dolly-out": {
+    name: "Slow Dolly Out",
+    description: "Slow pull-back reveal",
+    prompt: "slow dolly out, pulling back to reveal more of the scene",
+  },
+  "slow-tracking": {
+    name: "Tracking Shot",
+    description: "Camera follows the subject",
+    prompt: "tracking shot, camera smoothly follows the subject's movement",
+  },
+  "orbit": {
+    name: "Orbit / Arc",
+    description: "Camera orbits around subject",
+    prompt: "slow orbital shot, camera arcs around the subject, cinematic 3D movement",
+  },
+  "tilt-up": {
+    name: "Tilt Up",
+    description: "Camera tilts upward",
+    prompt: "slow tilt up, camera rises to reveal what's above",
+  },
+  "tilt-down": {
+    name: "Tilt Down",
+    description: "Camera tilts downward",
+    prompt: "slow tilt down, camera tilts to reveal what's below",
+  },
+  "handheld-subtle": {
+    name: "Subtle Handheld",
+    description: "Slight camera shake for realism",
+    prompt: "subtle handheld camera, gentle natural micro-movements, organic feel",
+  },
+  "dramatic-zoom": {
+    name: "Dramatic Zoom In",
+    description: "Fast zoom for dramatic effect",
+    prompt: "dramatic zoom in, intense camera movement, cinematic emphasis",
+  },
+  "crane-up": {
+    name: "Crane / Jib Up",
+    description: "Camera rises vertically like a crane",
+    prompt: "jib crane shot, camera rises vertically upward, smooth cinematic elevation",
+  },
 };
 
 // Supported aspect ratios for video

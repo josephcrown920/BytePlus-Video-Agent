@@ -171,6 +171,7 @@ function initVideoGen() {
         ratio: document.getElementById('vid-ratio').value,
         duration: Number(document.getElementById('vid-duration').value),
         resolution: document.getElementById('vid-resolution').value,
+        motion: document.getElementById('vid-motion').value || undefined,
         confirmed: false,
       }),
     });
@@ -203,6 +204,7 @@ function initVideoGen() {
         resolution: document.getElementById('vid-resolution').value,
         firstFrame: firstFrame || undefined,
         generateAudio: document.getElementById('vid-audio').checked,
+        motion: document.getElementById('vid-motion').value || undefined,
         confirmed: true,
         noWait,
       }),

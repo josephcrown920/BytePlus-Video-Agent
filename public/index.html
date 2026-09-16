@@ -105,8 +105,9 @@
                 <label>Preset</label>
                 <select id="vid-preset">
                   <option value="">Custom</option>
-                  <option value="cinematic-wide">🎬 Cinematic Wide (21:9, 8s)</option>
-                  <option value="theatrical">🎞️ Theatrical (16:9, 10s)</option>
+                  <option value="pro-cinematic">🎬 Pro Cinematic (16:9, 10s, 2.5)</option>
+                  <option value="cinematic-wide">🎬 Cinematic Wide (21:9, 8s, 2.5)</option>
+                  <option value="theatrical">🎞️ Theatrical (16:9, 10s, 2.5)</option>
                   <option value="social-portrait">📱 Social Portrait (9:16, 5s)</option>
                   <option value="social-landscape">📱 Social Landscape (16:9, 5s)</option>
                   <option value="storyboard">📐 Storyboard (16:9, 3s fast)</option>
@@ -115,9 +116,13 @@
               <div class="form-group">
                 <label>Model</label>
                 <select id="vid-version">
-                  <option value="2.0">Seedance 2.0 (Highest Quality)</option>
-                  <option value="1.5-pro">Seedance 1.5 Pro</option>
+                  <option value="2.5">Seedance 2.5 (Latest/Best)</option>
+                  <option value="2.0">Seedance 2.0</option>
                   <option value="2.0-fast">Seedance 2.0 Fast</option>
+                  <option value="2.0-mini">Seedance 2.0 Mini</option>
+                  <option value="1.5-pro">Seedance 1.5 Pro</option>
+                  <option value="1.0-pro">Seedance 1.0 Pro</option>
+                  <option value="1.0-lite">Seedance 1.0 Lite</option>
                 </select>
               </div>
             </div>
@@ -132,6 +137,7 @@
                   <option value="1:1">1:1 (Square)</option>
                   <option value="4:3">4:3</option>
                   <option value="2:1">2:1</option>
+                  <option value="adaptive">adaptive (from first frame)</option>
                 </select>
               </div>
               <div class="form-group">
@@ -150,8 +156,26 @@
 
             <div class="form-row">
               <div class="form-group">
+                <label>Camera Motion</label>
+                <select id="vid-motion">
+                  <option value="">None / Default</option>
+                  <option value="static">🔒 Static / Locked-off</option>
+                  <option value="slow-dolly-in">➡️ Slow Dolly In</option>
+                  <option value="slow-dolly-out">⬅️ Slow Dolly Out</option>
+                  <option value="slow-pan-left">↩️ Slow Pan Left</option>
+                  <option value="slow-pan-right">↪️ Slow Pan Right</option>
+                  <option value="slow-tracking">🎯 Tracking Shot</option>
+                  <option value="orbit">🔄 Orbit / Arc</option>
+                  <option value="tilt-up">⬆️ Tilt Up</option>
+                  <option value="tilt-down">⬇️ Tilt Down</option>
+                  <option value="crane-up">🏗️ Crane / Jib Up</option>
+                  <option value="handheld-subtle">📹 Subtle Handheld</option>
+                  <option value="dramatic-zoom">🔍 Dramatic Zoom</option>
+                </select>
+              </div>
+              <div class="form-group">
                 <label>First Frame URL (optional)</label>
-                <input type="text" id="vid-first-frame" placeholder="https://...">
+                <input type="text" id="vid-first-frame" placeholder="Image URL for likeness lock">
               </div>
             </div>
 

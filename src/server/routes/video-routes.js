@@ -1,6 +1,6 @@
 // Video generation API routes
 import { SeedanceClient } from "../../core/seedance-client.js";
-import { CINEMATIC_PRESETS, SUPPORTED_RATIOS, SUPPORTED_RESOLUTIONS } from "../../core/config.js";
+import { CINEMATIC_PRESETS, SUPPORTED_RATIOS, SUPPORTED_RESOLUTIONS, SEEDANCE_MODELS, MOTION_PRESETS } from "../../core/config.js";
 
 const client = new SeedanceClient();
 const activeTasks = new Map(); // task_id -> status cache
@@ -12,9 +12,11 @@ export async function videoRoutes(ctx) {
   if (pathname === "/presets" && method === "GET") {
     sendOk(res, {
       presets: CINEMATIC_PRESETS,
-      versions: ["1.5-pro", "2.0", "2.0-fast"],
+      versions: Object.keys(SEEDANCE_MODELS),
+      models: SEEDANCE_MODELS,
       ratios: SUPPORTED_RATIOS,
       resolutions: SUPPORTED_RESOLUTIONS,
+      motionPresets: MOTION_PRESETS,
     });
     return true;
   }
@@ -33,10 +35,16 @@ export async function videoRoutes(ctx) {
       if (!opts.resolution) opts.resolution = preset.resolution;
     }
 
+    // Apply motion preset
+    let finalPrompt = body.prompt;
+    if (body.motion && MOTION_PRESETS[body.motion]) {
+      finalPrompt = `${body.prompt}. ${MOTION_PRESETS[body.motion].prompt}`;
+    }
+
     // Dry-run if not confirmed
     if (!body.confirmed) {
       const dry = client.dryRun({
-        prompt: body.prompt,
+        prompt: finalPrompt,
         version: opts.version,
         ratio: opts.ratio,
         duration: opts.duration,
@@ -50,7 +58,7 @@ export async function videoRoutes(ctx) {
       if (body.noWait) {
         // Submit only, return task ID
         const result = await client.submit({
-          prompt: body.prompt,
+          prompt: finalPrompt,
           version: opts.version,
           ratio: opts.ratio,
           duration: opts.duration,
@@ -66,7 +74,7 @@ export async function videoRoutes(ctx) {
       } else {
         // Submit and wait
         const result = await client.generate({
-          prompt: body.prompt,
+          prompt: finalPrompt,
           version: opts.version,
           ratio: opts.ratio,
           duration: opts.duration,
