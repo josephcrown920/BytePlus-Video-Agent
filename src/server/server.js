@@ -8,6 +8,7 @@ import { videoRoutes } from "./routes/video-routes.js";
 import { pipelineRoutes } from "./routes/pipeline-routes.js";
 import { bibleRoutes } from "./routes/bible-routes.js";
 import { draftRoutes } from "./routes/draft-routes.js";
+import { directorRoutes } from "./routes/director-routes.js";
 import { serveStatic } from "./static.js";
 
 const MIME_TYPES = {
@@ -100,6 +101,12 @@ export function createServer(options = {}) {
       // Route matching
       try {
         let handled = false;
+
+        // Master director bridge: /api/modelark-director
+        else if (pathname === "/api/modelark-director") {
+          ctx.pathname = "/";
+          handled = await directorRoutes(ctx);
+        }
 
         // Image routes: /api/image/*
         if (pathname.startsWith("/api/image")) {
