@@ -1,0 +1,36 @@
+{
+  "name": "byteplus-vidagent",
+  "version": "1.0.0",
+  "description": "BytePlus Video Agent - A cinematic video generation pipeline using Seedream and Seedance APIs",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "vidagent": "src/cli/index.js"
+  },
+  "scripts": {
+    "start": "node src/server/index.js",
+    "server": "node src/server/index.js",
+    "dev": "node src/server/index.js",
+    "cli": "node src/cli/index.js",
+    "image": "node src/cli/index.js image",
+    "video": "node src/cli/index.js video",
+    "pipeline": "node src/cli/index.js pipeline",
+    "bible": "node src/cli/index.js bible",
+    "quickstart": "node scripts/quickstart.js"
+  },
+  "keywords": [
+    "byteplus",
+    "seedream",
+    "seedance",
+    "video-generation",
+    "image-generation",
+    "ai-cinema",
+    "cinematic"
+  ],
+  "author": "Aurora Cinematic Studio",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {}
+}

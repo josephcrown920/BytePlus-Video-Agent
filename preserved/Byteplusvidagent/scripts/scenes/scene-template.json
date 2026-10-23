@@ -1,0 +1,30 @@
+{
+  "sceneId": "scene-1",
+  "title": "Opening Scene",
+  "conceptPrompt": "A vast cinematic landscape at dawn",
+  "videoPrompt": "Slow pan across the landscape, cinematic camera movement",
+  "duration": 8,
+  "ratio": "21:9",
+  "resolution": "1080p",
+  "seedanceVersion": "2.0",
+  "seedreamVersion": "5.0",
+  "generateAudio": true,
+  "character": null,
+  "shots": [
+    {
+      "prompt": "Wide establishing shot of the landscape",
+      "camera": "wide",
+      "movement": "static"
+    },
+    {
+      "prompt": "Medium shot of foreground details",
+      "camera": "medium",
+      "movement": "slow dolly"
+    },
+    {
+      "prompt": "Close-up of key detail",
+      "camera": "close-up",
+      "movement": "slow rack focus"
+    }
+  ]
+}

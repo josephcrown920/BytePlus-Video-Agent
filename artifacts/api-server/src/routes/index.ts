@@ -1,13 +1,24 @@
-import modelarkDirectorRouter from "./modelark-director";
 import { Router, type IRouter } from "express";
+import videoPlanRouter from "./video";
+import modelarkDirectorRouter from "./modelark-director";
 import healthRouter from "./health";
-import videoRouter from "./video";
+import chatRouter from "./chat";
+import contentRouter from "./content";
+import imagesRouter from "./images";
+import videoAgentRouter from "./video-agent";
+import shareRouter from "./share";
+import mediaRouter from "./media";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(videoPlanRouter);
 router.use(modelarkDirectorRouter);
-router.use(videoRouter);
+router.use("/chat", chatRouter);
+router.use("/content", contentRouter);
+router.use("/images", imagesRouter);
+router.use("/video-agent", videoAgentRouter);
+router.use("/share", shareRouter);
+router.use("/media", mediaRouter);
 
 export default router;
-

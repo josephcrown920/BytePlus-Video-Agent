@@ -17,7 +17,12 @@ router.post("/modelark-director", async (req, res) => {
     if (!init.ok) throw new Error(`Aurora MCP initialize failed: ${init.status}`);
     const result = await fetch(url, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "aurora_modelark_director", arguments: { instruction: instruction.trim(), context: req.body?.context } } }) });
     const payload = await result.json().catch(() => ({}));
-    if (!result.ok) throw new Error(payload?.error?.message || `Aurora MCP director failed: ${result.status}`);
+    if (!result.ok) throw new Error(
+      typeof payload === "object" && payload !== null && "error" in payload
+      && typeof payload.error === "object" && payload.error !== null && "message" in payload.error
+      && typeof payload.error.message === "string"
+        ? payload.error.message : `Aurora MCP director failed: ${result.status}`
+    );
     return res.json(payload);
   } catch (error) {
     return res.status(502).json({ error: error instanceof Error ? error.message : String(error) });

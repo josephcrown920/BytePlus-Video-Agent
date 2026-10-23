@@ -37,7 +37,12 @@ export type ProductionStage =
   | 'verifying'
   | 'delivering'
   | 'completed'
-  | 'failed';
+  | 'failed'
+  | 'storyboard'
+  | 'sequence_assembly'
+  | 'audio_synthesis'
+  | 'final_render'
+  | 'delivered';
 
 export interface NarrationEvent {
   stage: ProductionStage;
@@ -46,7 +51,8 @@ export interface NarrationEvent {
 }
 
 /** Narration copy the agent "says" while it works, mirroring agent-core's stage messages per mode. */
-const STAGE_NARRATION: Record<ProductionMode, Record<ProductionStage, string>> = {
+type NarratedStage = Exclude<ProductionStage, 'storyboard' | 'sequence_assembly' | 'audio_synthesis' | 'final_render' | 'delivered'>;
+const STAGE_NARRATION: Record<ProductionMode, Record<NarratedStage, string>> = {
   cinematic: {
     planning: 'Planning a continuity-aware beat breakdown: framing, camera movement, lens style and lighting.',
     routing: 'Routing to the cinematic pipeline: storyboard + timeline skills, ModelArk Seedance/Seedream.',
@@ -96,12 +102,11 @@ export interface RenderJob {
   sourceFrame: string;
   resultImage?: string;
   duration?: string;
-  mode?: VideoMode;
+  narration: NarrationEvent[];
   deliveryStatus?: DeliveryStatus;
   deliveryUrl?: string;
   retryCount?: number;
   failureReason?: string;
-  stage?: string;
 }
 
 export interface BibleAsset {
@@ -164,7 +169,7 @@ interface StudioState {
   viralOptions: ViralOptions;
   updateViralOptions: (opts: Partial<ViralOptions>) => void;
   queue: RenderJob[];
-  addJob: (prompt: string) => void;
+  addJob: (prompt: string) => string;
   retryJob: (id: string) => void;
   deliverJob: (id: string) => void;
   shots: Shot[];
@@ -200,7 +205,7 @@ const initialState: StudioState = {
   },
   updateViralOptions: () => {},
   queue: [],
-  addJob: () => {},
+  addJob: () => '',
   retryJob: () => {},
   deliverJob: () => {},
   shots: [],
@@ -308,6 +313,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const [queue, setQueue] = useState<RenderJob[]>([
     {
       id: 'q1',
+      narration: [],
       prompt: 'High speed chase through asteroid field',
       status: 'completed',
       progress: 100,
@@ -367,14 +373,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setViralOptions((prev) => ({ ...prev, ...opts }));
   }, []);
 
-  const [activeMode, setActiveMode] = useState<ProductionMode>('cinematic');
 
   const runJobStages = useCallback((jobId: string, mode: ProductionMode) => {
     const messages = STAGE_NARRATION[mode];
     // `revising` only appears when a candidate needs a repair pass after inspection, mirroring the
     // backend's real approve/reject/repair loop rather than always running every stage unconditionally.
     const needsRevision = Math.random() < 0.3;
-    const stages: ProductionStage[] = [
+    const stages: NarratedStage[] = [
       'planning', 'routing', 'generating', 'rendering', 'inspecting',
       ...(needsRevision ? ['revising' as const] : []),
       'verifying', 'delivering',
@@ -383,7 +388,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     // ever reporting success before the corresponding stage has actually run.
     const failAt = Math.random() < 0.15 ? stages[2 + Math.floor(Math.random() * 2)] : null;
 
-    const pushNarration = (stage: ProductionStage) => {
+    const pushNarration = (stage: NarratedStage) => {
       setQueue(prev => prev.map(j => j.id === jobId
         ? { ...j, stage, status: stage === 'completed' ? 'completed' : stage === 'failed' ? 'failed' : 'rendering', narration: [...j.narration, { stage, message: messages[stage], at: new Date() }] }
         : j));
@@ -418,18 +423,17 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setTimeout(advance, 400);
   }, []);
 
-  const addJob = useCallback((prompt: string, mode: ProductionMode = activeMode) => {
+  const addJob = useCallback((prompt: string) => {
     const sourcePool = [cyberpunkShot, astronautShot, desertShot];
     const newJob: RenderJob = {
       id: Math.random().toString(36).substring(7),
       prompt,
       mode,
       status: 'queued',
-      stage: 'planning',
       progress: 0,
       createdAt: new Date(),
       sourceFrame: sourcePool[Math.floor(Math.random() * sourcePool.length)],
-      mode,
+      narration: [],
       deliveryStatus: 'queued',
       stage: 'storyboard',
       retryCount: 0,
@@ -472,6 +476,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         }
       }, 500);
     }, 1200);
+    return newJob.id;
   }, [mode]);
 
   const retryJob = useCallback((id: string) => {

@@ -15,6 +15,7 @@ import {
   Type,
   Eye,
   Video,
+  Rocket,
 } from 'lucide-react';
 import cyberpunkShot from '@assets/generated_images/shot-cyberpunk.jpg';
 import astronautShot from '@assets/generated_images/shot-astronaut.jpg';
@@ -57,6 +58,7 @@ export default function Studio() {
     viralOptions,
     updateViralOptions,
     addJob,
+    queue,
     saveDraft,
   } = useStudio();
 
@@ -84,21 +86,7 @@ export default function Studio() {
     if (!activePrompt.trim()) return;
 
     setIsGenerating(true);
-    setProgress(0);
-    addJob(activePrompt);
-
-    const interval = setInterval(() => {
-      setProgress((p) => {
-        if (p >= 100) {
-          clearInterval(interval);
-          setIsGenerating(false);
-          const images = [cyberpunkShot, astronautShot, desertShot];
-          setPreviewImage(images[Math.floor(Math.random() * images.length)]);
-          return 100;
-        }
-        return p + 4;
-      });
-    }, 50);
+    setTrackedJobId(addJob(activePrompt));
   };
 
   const saveCurrentFrame = () => {

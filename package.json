@@ -1,12 +1,20 @@
 {
-  "name": "workspace",
+  "name": "byteplus-unified-agent",
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "build": "pnpm run typecheck && pnpm run build:web",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "dev": "node scripts/dev.mjs",
+    "dev:studio": "node scripts/dev.mjs studio",
+    "dev:aura": "node scripts/dev.mjs aura",
+    "dev:standalone": "pnpm --filter byteplus-vidagent start",
+    "vidagent": "pnpm --filter byteplus-vidagent cli",
+    "build:web": "PORT=${PORT:-3100} BASE_PATH=${BASE_PATH:-/} pnpm --filter @workspace/api-server --filter @workspace/byteplus-video-agent --filter @workspace/byteplus-studio --filter @workspace/aura-ai run build",
+    "test": "pnpm --filter @workspace/api-server test && pnpm --filter @workspace/scripts exec tsx --test ../agent-core/video-agent.test.ts && node --test tools/vidagent/test/*.test.js",
+    "verify:preservation": "node scripts/verify-preservation.mjs"
   },
   "private": true,
   "dependencies": {
@@ -15,5 +23,9 @@
   "devDependencies": {
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=24 <25"
   }
 }

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Aura AI"
+description = "Premium generative AI chat agent with web search, image generation, and persistent memory. Built with TanStack Start and Supabase auth."
+version = "1.0.0"
+id = "artifacts/aura-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21927
+
+[services.development]
+run = "pnpm --filter @workspace/aura-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/aura-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/aura-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21927"
+BASE_PATH = "/"

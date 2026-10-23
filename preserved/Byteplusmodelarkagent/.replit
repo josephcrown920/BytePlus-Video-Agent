@@ -1,0 +1,35 @@
+modules = ["nodejs-24", "postgresql-16", "python-base-3.13"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[agent]
+stack = "PNPM_WORKSPACE"
+expertMode = true
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+SUPABASE_PROJECT_ID = "rjwcbvhcppfgmybarwkl"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_M4GNMb6l60l1ZGAsPpmLXQ_xSwY6vjx"
+SUPABASE_URL = "https://rjwcbvhcppfgmybarwkl.supabase.co"
+VITE_SUPABASE_PROJECT_ID = "rjwcbvhcppfgmybarwkl"
+VITE_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_M4GNMb6l60l1ZGAsPpmLXQ_xSwY6vjx"
+VITE_SUPABASE_URL = "https://rjwcbvhcppfgmybarwkl.supabase.co"
+EXPO_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_M4GNMb6l60l1ZGAsPpmLXQ_xSwY6vjx"
+EXPO_PUBLIC_SUPABASE_URL = "https://rjwcbvhcppfgmybarwkl.supabase.co"
+
+[nix]
+channel = "stable-25_05"

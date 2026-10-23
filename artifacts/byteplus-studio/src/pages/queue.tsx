@@ -52,7 +52,6 @@ function QueueCard({ job, onRetry, onDeliver }: { job: RenderJob; onRetry: () =>
   const isQueued = job.status === 'queued';
   const isFailed = job.status === 'failed';
   const displayImage = isCompleted && job.resultImage ? job.resultImage : job.sourceFrame;
-  const ModeIcon = MODE_ICON[job.mode];
   const lastNarration = job.narration[job.narration.length - 1];
 
   return (

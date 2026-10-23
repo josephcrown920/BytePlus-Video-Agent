@@ -1,0 +1,34 @@
+{
+  "projectId": "josh-music-video",
+  "title": "Josh - Street Lights (Music Video)",
+  "genre": "Hip-hop / Rap Music Video",
+  "tone": "Dramatic, moody, cinematic, defiant",
+  "targetLength": "30-45 seconds (multiple shots)",
+  "aspectRatio": "9:16 (vertical) / 16:9 (landscape)",
+  "mainCharacter": "Josh",
+  "style": {
+    "overall": "Cinematic hip-hop music video, late-night rainy city streets, dramatic lighting, high contrast",
+    "colorPalette": "Deep blues, neon reds, wet asphalt reflections, police siren lighting",
+    "lighting": "Dramatic chiaroscuro, police siren red/blue flashes, neon reflections on wet pavement, moody streetlights",
+    "lens": "35mm anamorphic, shallow depth of field, cinematic",
+    "filmGrain": "Subtle 35mm film grain, high contrast look",
+    "aesthetic": "Hip-hop rap video, street photography, gritty urban"
+  },
+  "character": {
+    "name": "Josh",
+    "visualDescription": "Young Black male rapper with long red dreadlocks, stylish hip-hop streetwear, multiple silver chains, confident swagger",
+    "outfitOptions": [
+      "Black BAPE shark t-shirt, khaki pants, white Air Force 1 sneakers, multiple silver chains with cross pendants",
+      "Red and black NBA Josh jersey, black pants, white-black sneakers, rainbow reflective sunglasses, cuban link chain"
+    ],
+    "accessories": "Silver cuban link chains, cross pendants, vintage microphone, reflective sunglasses, wristwatch",
+    "keyFeatures": "Red dreadlocks, tattoos, confident expression, signature swagger"
+  },
+  "keyLocations": [
+    "Rain-soaked city street at night with police car lights reflecting on wet pavement",
+    "Urban alleyway with neon signs",
+    "Rooftop overlooking city skyline",
+    "Abandoned warehouse interior"
+  ],
+  "themes": ["Defiance", "Ambition", "Street life", "Success against odds"]
+}

@@ -1,0 +1,294 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: media
+    description: AI image and video generation
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /share:
+    post:
+      operationId: createShareLink
+      tags: [share]
+      summary: Create a public share link
+      description: Saves an authenticated user's script or storyboard as a public immutable snapshot.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShareRequest"
+      responses:
+        "201":
+          description: Share link created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateShareResponse"
+        "400":
+          description: Invalid share payload
+        "401":
+          description: Authentication required
+  /share/{id}:
+    get:
+      operationId: getSharedContent
+      tags: [share]
+      summary: Get public shared content
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shared script or storyboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedContent"
+        "404":
+          description: Shared content not found
+  /media/generations:
+    post:
+      operationId: createMediaGeneration
+      tags: [media]
+      summary: Start an AI media generation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMediaGenerationRequest"
+      responses:
+        "201":
+          description: Generation queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaGeneration"
+        "400":
+          description: Invalid generation request
+        "401":
+          description: Authentication required
+        "429":
+          description: Generation rate limit reached
+        "502":
+          description: Generation provider rejected the request
+  /media/generations/{id}:
+    get:
+      operationId: getMediaGeneration
+      tags: [media]
+      summary: Get generation status and result
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/GenerationId"
+      responses:
+        "200":
+          description: Current generation state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaGeneration"
+        "401":
+          description: Authentication required
+        "404":
+          description: Generation not found
+  /media/generations/{id}/events:
+    get:
+      operationId: streamMediaGeneration
+      tags: [media]
+      summary: Stream live generation progress
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/GenerationId"
+      responses:
+        "200":
+          description: Server-sent generation status events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          description: Authentication required
+        "404":
+          description: Generation not found
+  /media/generations/{id}/cancel:
+    post:
+      operationId: cancelMediaGeneration
+      tags: [media]
+      summary: Cancel a queued or running generation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/GenerationId"
+      responses:
+        "200":
+          description: Generation cancellation requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaGeneration"
+        "401":
+          description: Authentication required
+        "404":
+          description: Generation not found
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    GenerationId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 2048
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    CreateShareRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [script, storyboard]
+        data:
+          type: object
+          additionalProperties: true
+      required:
+        - type
+        - data
+    CreateShareResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+      required:
+        - id
+        - url
+    SharedContent:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [script, storyboard]
+        title:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - title
+        - data
+        - created_at
+    MediaKind:
+      type: string
+      enum: [image, video]
+    MediaModel:
+      type: string
+      enum: [seedream-4.5, flux-dev, nano-banana-pro, seedance-2.5, wan-2.5]
+    MediaGenerationStatus:
+      type: string
+      enum: [queued, processing, completed, failed, cancelled]
+    CreateMediaGenerationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          $ref: "#/components/schemas/MediaKind"
+        model:
+          $ref: "#/components/schemas/MediaModel"
+        prompt:
+          type: string
+          minLength: 3
+          maxLength: 1500
+        negativePrompt:
+          type: string
+          maxLength: 500
+        aspectRatio:
+          type: string
+          enum: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]
+        duration:
+          type: integer
+          enum: [4, 5, 8, 10]
+        resolution:
+          type: string
+          enum: [standard, high]
+      required: [kind, model, prompt, aspectRatio]
+    MediaGeneration:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/MediaKind"
+        model:
+          $ref: "#/components/schemas/MediaModel"
+        status:
+          $ref: "#/components/schemas/MediaGenerationStatus"
+        progress:
+          type: number
+          minimum: 0
+          maximum: 100
+        queuePosition:
+          type: number
+          nullable: true
+        resultUrl:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        logs:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, kind, model, status, progress, queuePosition, resultUrl, error, logs, createdAt]
+
